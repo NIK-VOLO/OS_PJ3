@@ -4,6 +4,7 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <math.h>
+#include <string.h>
 
 //Assume the address space is 32 bits, so the max memory size is 4GB
 //Page size is 4KB
@@ -61,5 +62,10 @@ void print_TLB_missrate();
 
 void page_dir_init();
 void* create_virt_addr();
+// Function from HW3
+static unsigned int get_top_bits(unsigned int value,  int num_bits);
+static unsigned int get_mid_bits (unsigned int value, int num_middle_bits, int num_lower_bits);
+static void set_bit_at_index(char *bitmap, int index);
+static int get_bit_at_index(char *bitmap, int index);
 
 #endif
