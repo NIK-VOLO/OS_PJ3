@@ -49,7 +49,8 @@ void set_physical_mem() {
     printf("Number of physical Pages: %d\n", num_phys_pages);
 
     phys_map = (char*) malloc(4); // For now allocating 32 bits for bit map, even though physical space is 20 bits
- 
+    memset(phys_map,0, 4);
+
     //munmap(phys, length); //DELETE LATER
 }
 

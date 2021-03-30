@@ -47,6 +47,15 @@ struct tlb {
 };
 struct tlb tlb_store;
 
+//Struct for Page table
+typedef struct page_table_t{
+    /*
+    Store:
+        - Bitmap
+        - Array
+    */
+} page_table;
+
 
 void set_physical_mem();
 pte_t* translate(pde_t *pgdir, void *va);
