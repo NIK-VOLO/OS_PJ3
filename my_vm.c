@@ -1,17 +1,56 @@
 #include "my_vm.h"
 
+
+#define handle_mmap_error(msg) \
+           do { perror(msg); exit(EXIT_FAILURE); } while (0)
+
+//GLOBALS
+/* 
+* Simulated Physical address space
+* First level page table (inside sim-phys)
+*/
+char* phys;
+int num_phys_pages;
+int num_virt_pages;
+char* phys_map;
+char* dir_map;
+
+int num_offset_bits;
+int num_dir_bits;
+int num_table_bits;
+
 /*
 Function responsible for allocating and setting your physical memory 
 */
 void set_physical_mem() {
 
     //Allocate physical memory using mmap or malloc; this is the total size of
-    //your memory you are simulating
-
+    //your memory you are simulating 
+    unsigned long long length = MEMSIZE;
+    phys = mmap(NULL,length, PROT_READ|PROT_WRITE, MAP_ANON|MAP_PRIVATE|MAP_NORESERVE, -1, 0); //DOUBLE CHECK THESE PARAMETERS LATER
     
+    if (phys == MAP_FAILED){
+        handle_mmap_error("mmap");
+    }else{
+        printf("|-- mmap() successful\n");
+        printf("\t|-- Physical Address:  %p \n", phys);
+    }
+       
     //HINT: Also calculate the number of physical and virtual pages and allocate
     //virtual and physical bitmaps and initialize them
 
+    num_offset_bits = log2(PGSIZE);
+    num_dir_bits = (int) floor((ADDR_BITS - num_offset_bits)/2);
+    num_table_bits = ADDR_BITS - (num_dir_bits+num_offset_bits);
+    printf("Offset bits: %d\nDirectory bits: %d\nPage Table bits: %d\n", num_offset_bits, num_dir_bits, num_table_bits);
+
+    double higher_bits = (double) (ADDR_BITS - num_offset_bits);
+    num_phys_pages = scalbn(1, higher_bits); // 1*2^n
+    printf("Number of physical Pages: %d\n", num_phys_pages);
+
+    phys_map = (char*) malloc(4); // For now allocating 32 bits for bit map, even though physical space is 20 bits
+ 
+    //munmap(phys, length); //DELETE LATER
 }
 
 
@@ -186,6 +225,21 @@ void mat_mult(void *mat1, void *mat2, int size, void *answer) {
      */
 
        
+}
+
+/*
+This function creates the first level page table (directory) in the simulated
+physical memory; 
+*/
+void page_dir_init(){
+
+}
+
+/*
+* This function finds the next available virtual address to be used by a_malloc()
+*/
+void* create_virt_addr(){
+
 }
 
 

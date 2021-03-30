@@ -3,11 +3,15 @@
 #include <stdbool.h>
 #include <stdlib.h>
 #include <stdio.h>
+#include <math.h>
 
 //Assume the address space is 32 bits, so the max memory size is 4GB
 //Page size is 4KB
 
 //Add any important includes here which you may need
+#include <sys/mman.h>
+#include <errno.h>
+
 
 #define PGSIZE 4096
 
@@ -24,6 +28,13 @@ typedef unsigned long pte_t;
 typedef unsigned long pde_t;
 
 #define TLB_ENTRIES 512
+
+#define ADDR_BITS 32
+
+//Structure to store information for every tlb entry. 
+struct tlb_entry {
+    
+};
 
 //Structure to represents TLB
 struct tlb {
@@ -47,5 +58,8 @@ void put_value(void *va, void *val, int size);
 void get_value(void *va, void *val, int size);
 void mat_mult(void *mat1, void *mat2, int size, void *answer);
 void print_TLB_missrate();
+
+void page_dir_init();
+void* create_virt_addr();
 
 #endif
