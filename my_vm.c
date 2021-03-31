@@ -9,6 +9,9 @@
 * Simulated Physical address space
 * First level page table (inside sim-phys)
 */
+
+int page_dir_created = 0;
+
 char* phys;
 int num_phys_pages;
 int num_virt_pages;
@@ -229,11 +232,30 @@ void mat_mult(void *mat1, void *mat2, int size, void *answer) {
 }
 
 /*
-This function creates the first level page table (directory) in the simulated
+This function creates second level page table (directory) in the simulated
 physical memory; 
 */
-void page_dir_init(){
+void page_table_init(page_table* ptr){
+    ptr->bitmap = (char*) malloc(4);
+    memset(ptr->bitmap, 0, sizeof(ptr->bitmap));
+    //Allocate mem in "physical memory"
+}
 
+/*
+This function creates the first level page table (directory) in the simulated
+physical memory at the very start of the address space
+*/
+void page_dir_init(page_dir* ptr){
+    ptr->bitmap = (char*) malloc(4);
+    memset(ptr->bitmap, 0, sizeof(ptr->bitmap));
+    //Allocate mem in "physical memory"
+    //Check how many physical pages need to be allocated for the directory
+
+
+    //Set first bit in bitmap to 1
+    set_bit_at_index(phys_map, 0);
+    //ptr = (page_dir*) phys;
+    ptr->entries = (pde_t*)&phys;
 }
 
 /*
@@ -288,7 +310,6 @@ static unsigned int get_mid_bits (unsigned int value, int num_middle_bits, int n
 
 }
 
-//Example 3
 //Function to set a bit at "index"
 // bitmap is a region where were store bitmap 
 static void set_bit_at_index(char *bitmap, int index)
@@ -323,4 +344,23 @@ static int get_bit_at_index(char *bitmap, int index)
     return (int)(*region >> (index % 8)) & 0x1;
 }
 
+/*
+* Will copy the data from val to simulated physical memory starting from offset
+*
+* Make sure val is passed as a pointer. Ex: int x = 4; 
+*   --> first make a pointer to this variable, then pass it to put_in_phys()
+*
+* Returns   Pointer to the start location of the copied mem in the physical space
+*/
+char* put_in_phys(void* val, int offset, int size){
+    if(offset+size > MEMSIZE){
+        return NULL;
+    }
+    char* dest = phys+offset;
+    //printf("Phys: %p -- Dest: %p\n", phys, dest);
+    
+    memcpy(dest, val, size);
+    
+    return dest;
+}
 

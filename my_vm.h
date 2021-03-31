@@ -49,12 +49,15 @@ struct tlb tlb_store;
 
 //Struct for Page table
 typedef struct page_table_t{
-    /*
-    Store:
-        - Bitmap
-        - Array
-    */
+   char* bitmap;
+   pte_t* entries[];
 } page_table;
+
+//Struct for directory table
+typedef struct page_directory_t{
+   char* bitmap;
+   pde_t** entries;
+} page_dir;
 
 
 void set_physical_mem();
@@ -69,8 +72,10 @@ void get_value(void *va, void *val, int size);
 void mat_mult(void *mat1, void *mat2, int size, void *answer);
 void print_TLB_missrate();
 
+void page_table_init();
 void page_dir_init();
 void* create_virt_addr();
+char* put_in_phys(void* val, int offset, int size);
 // Function from HW3
 static unsigned int get_top_bits(unsigned int value,  int num_bits);
 static unsigned int get_mid_bits (unsigned int value, int num_middle_bits, int num_lower_bits);
