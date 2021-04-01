@@ -22,7 +22,8 @@ int main(int argc, char **argv){
     // dest = put_in_phys((void*) str, 10, strlen(str));
     // printf("%s\n", dest);
 
-    
+    //page_dir* ptr;
+    page_dir_init();
 
     return 0;
 }

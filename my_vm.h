@@ -54,10 +54,10 @@ typedef struct page_table_t{
 } page_table;
 
 //Struct for directory table
-typedef struct page_directory_t{
-   char* bitmap;
-   pde_t** entries;
-} page_dir;
+// typedef struct page_directory_t{
+//    char* bitmap;
+//    pde_t* entries;
+// } page_dir;
 
 
 void set_physical_mem();

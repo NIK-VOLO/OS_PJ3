@@ -15,12 +15,16 @@ int page_dir_created = 0;
 char* phys;
 int num_phys_pages;
 int num_virt_pages;
+
 char* phys_map;
 char* dir_map;
+pde_t* entries;
 
 int num_offset_bits;
 int num_dir_bits;
 int num_table_bits;
+
+
 
 /*
 Function responsible for allocating and setting your physical memory 
@@ -245,17 +249,36 @@ void page_table_init(page_table* ptr){
 This function creates the first level page table (directory) in the simulated
 physical memory at the very start of the address space
 */
-void page_dir_init(page_dir* ptr){
-    ptr->bitmap = (char*) malloc(4);
-    memset(ptr->bitmap, 0, sizeof(ptr->bitmap));
+void page_dir_init(){
+    dir_map = (char*) malloc(4);
+    memset(dir_map, 0, sizeof(dir_map));
+
     //Allocate mem in "physical memory"
     //Check how many physical pages need to be allocated for the directory
-
+    //  Each entry is 4 bytes (unsigned long)
+    //  Number of entries = 2^higher order bits (ex: 2^10  = 1024)
+    //  Total Size of table = num entries * 4 bytes (1024 * 4 = 4KB)
+    // = 1 Physical Page
 
     //Set first bit in bitmap to 1
     set_bit_at_index(phys_map, 0);
     //ptr = (page_dir*) phys;
-    ptr->entries = (pde_t*)&phys;
+
+    // ----- TEST FOR ADDRESS MAPPING -----
+    void* addr = phys;
+    entries = (pde_t*) addr;
+    printf("Phys: %p -- Directory: %p\n", phys, entries);
+    entries[0] = 0xb7d9f800;
+    printf("|-- Directory entry 0: %lx\n", entries[0]);
+    int* val = (int*) entries[0];
+    *val = 2;
+    printf("\t|-- Value: %d\n", *val);
+    printf("|-- Directory address of index 0: %p\n", &entries[0]);
+    printf("\t|-- Size of Entry: %d\n", sizeof(entries[0]));
+    printf("|-- Directory address of index 1: %p\n", &entries[1]);
+    printf("\t|-- Size of Entry: %d\n", sizeof(entries[1]));
+    // ----- END TEST FOR ADDRESS MAPPING -----
+
 }
 
 /*
@@ -328,6 +351,12 @@ static void set_bit_at_index(char *bitmap, int index)
     *region |= bit;
    
     return;
+}
+
+static void free_bit_at_index(char *bitmap, int index){
+    char *region = ((char *) bitmap) + (index / 8);
+    char bit = 1 << (index % 8);
+    *region &= ~bit;
 }
 
 
