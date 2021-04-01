@@ -52,7 +52,7 @@ void set_physical_mem() {
     printf("Offset bits: %d\nDirectory bits: %d\nPage Table bits: %d\n", num_offset_bits, num_dir_bits, num_table_bits);
 
     double higher_bits = (double) (ADDR_BITS - num_offset_bits);
-    num_phys_pages = scalbn(1, higher_bits); // 1*2^n
+    num_phys_pages = scalbn(1, higher_bits)/PGSIZE; // (1*2^n)/Page size
     printf("Number of physical Pages: %d\n", num_phys_pages);
 
     phys_map = (char*) malloc(4); // For now allocating 32 bits for bit map, even though physical space is 20 bits
@@ -144,12 +144,37 @@ page_map(pde_t *pgdir, void *va, void *pa)
     return -1;
 }
 
+//Gets the starting address of a page based on page_num ("index" for the start of the page's memory block)
+void* get_addr(int page_num){
+    //Address = phys + (size of page * page_num)
+    int shift = PGSIZE * page_num;
+    //printf("Shift by %d bytes\n", shift);
+    void* ptr = phys + shift;
+    //printf("Address of page: %p\n", ptr);
+
+    return ptr;
+}
 
 /*Function that gets the next available page
 */
 void *get_next_avail(int num_pages) {
- 
     //Use virtual address bitmap to find the next free page
+    //Iteratively check each bit
+    //Find the first unset bit
+    //Use the position (index) of that bit to pass to get_addr(int page_num) to get the address itself
+
+    int i = 0;
+    int value = get_bit_at_index(phys_map, i);
+    while(value == 1 && i < num_pages){
+        i++;
+        value = get_bit_at_index(phys_map, i);
+        //printf("Bit: %d at index: %d\n", value, i);
+        if(value == 0){
+            break;
+        }
+    }
+    //printf("INDEX: %d\n", i);
+    return get_addr(i);
 }
 
 
@@ -260,6 +285,11 @@ void page_dir_init(){
     //  Total Size of table = num entries * 4 bytes (1024 * 4 = 4KB)
     // = 1 Physical Page
 
+    //NOTES: 
+    //  NEED TO ADD CHECKS TO SEE IF THE DIR SHOULD SPAN MULTIPLE PAGES (POSSIBLE)
+
+
+
     //Set first bit in bitmap to 1
     set_bit_at_index(phys_map, 0);
     //ptr = (page_dir*) phys;
@@ -268,16 +298,26 @@ void page_dir_init(){
     void* addr = phys;
     entries = (pde_t*) addr;
     printf("Phys: %p -- Directory: %p\n", phys, entries);
-    entries[0] = 0xb7d9f800;
-    printf("|-- Directory entry 0: %lx\n", entries[0]);
-    int* val = (int*) entries[0];
-    *val = 2;
-    printf("\t|-- Value: %d\n", *val);
-    printf("|-- Directory address of index 0: %p\n", &entries[0]);
-    printf("\t|-- Size of Entry: %d\n", sizeof(entries[0]));
-    printf("|-- Directory address of index 1: %p\n", &entries[1]);
-    printf("\t|-- Size of Entry: %d\n", sizeof(entries[1]));
+    // entries[0] = 0xb7d9f800;
+    // printf("|-- Directory entry 0: %lx\n", entries[0]);
+    // int* val = (int*) entries[0];
+    // *val = 2;
+    // printf("\t|-- Value at address: %d\n", *val);
+    // printf("|-- Directory address of index 0: %p\n", &entries[0]);
+    // printf("\t|-- Size of Entry: %d\n", sizeof(entries[0]));
+    // printf("|-- Directory address of index 1: %p\n", &entries[1]);
+    // printf("\t|-- Size of Entry: %d\n", sizeof(entries[1]));
     // ----- END TEST FOR ADDRESS MAPPING -----
+
+    // ----- TEST FOR get_next_avail() ------
+    void* ptr = get_next_avail(num_phys_pages);
+    printf("Next open page: %p\n", ptr);
+    // ----- END TEST FOR get_next_avail() ------
+}
+
+//When needed, create a new entry (new page table) in the page directory.
+//Allocates physical space for the memory and stores the reference to the address as an entry. 
+void* create_dir_entry(){
 
 }
 
