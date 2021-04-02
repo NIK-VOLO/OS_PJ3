@@ -4,6 +4,8 @@
 #define handle_mmap_error(msg) \
            do { perror(msg); exit(EXIT_FAILURE); } while (0)
 
+void* create_dir_entry();
+
 //GLOBALS
 /* 
 * Simulated Physical address space
@@ -23,6 +25,8 @@ pde_t* entries;
 int num_offset_bits;
 int num_dir_bits;
 int num_table_bits;
+
+int num_pd_entries;
 
 
 
@@ -177,6 +181,42 @@ void *get_next_avail(int num_pages) {
     return get_addr(i);
 }
 
+/*Function that gets the next available page directory entry slot
+Returns the index of the next open spot. Each 4 Bytes
+*/
+int get_next_pde() {
+    
+    void* address;
+    int i = 0;
+    int value = get_bit_at_index(dir_map, i);
+    if(value == 0){
+        printf("OPEN INDEX: %d\n", i);
+        //Get the address of that position
+        //PD address + bytes    
+        address = &entries[i];
+        printf("Dir: %p -- Entry: %p\n", entries, address);
+        return i;
+        //return address;
+    }
+    
+    while(value == 1 && i < sizeof(dir_map)){
+        i++;
+        value = get_bit_at_index(dir_map, i);
+        printf("Bit: %d at index: %d\n", value, i);
+        if(value == 0){
+            printf("OPEN INDEX: %d\n", i);
+            //Get the address of that position
+            //PD address + bytes    
+            address = &entries[i];
+            printf("Dir: %p -- Entry: %p\n", entries, address);
+            return i;
+           //return address;
+        }
+    }
+    //Directory full
+    return -1;
+}
+
 
 /* Function responsible for allocating pages
 and used by the benchmark
@@ -285,13 +325,25 @@ void page_dir_init(){
     //  Total Size of table = num entries * 4 bytes (1024 * 4 = 4KB)
     // = 1 Physical Page
 
-    //NOTES: 
+    //NOTE: 
     //  NEED TO ADD CHECKS TO SEE IF THE DIR SHOULD SPAN MULTIPLE PAGES (POSSIBLE)
+    printf("Size of pde_t: %d Bytes\n", sizeof(pde_t));
+    num_pd_entries = scalbn(1, num_dir_bits);
+    printf("Number of entries in directory: %d\n", num_pd_entries);
+    int dir_size = num_pd_entries * sizeof(pde_t);
+    printf("Total Size of directory: %d\n", dir_size);
+    int num_pages_needed = dir_size/PGSIZE + ((dir_size % PGSIZE) != 0);
+    printf("Number of pages needed to store directory: %d\n", num_pages_needed);
 
 
-
-    //Set first bit in bitmap to 1
-    set_bit_at_index(phys_map, 0);
+    //Set required bits in bitmap to 1
+    //Loop using num_pages_needed
+    int i;
+    for(i = 0; i < num_pages_needed; i++){
+        printf("Setting bit index %d\n", i);
+        set_bit_at_index(phys_map, i);
+    }
+    
     //ptr = (page_dir*) phys;
 
     // ----- TEST FOR ADDRESS MAPPING -----
@@ -313,12 +365,91 @@ void page_dir_init(){
     void* ptr = get_next_avail(num_phys_pages);
     printf("Next open page: %p\n", ptr);
     // ----- END TEST FOR get_next_avail() ------
+
+    // ----- TEST FOR create_dir_entry() ------
+    //set_bit_at_index(dir_map, 0);
+    create_dir_entry();
+    printf("|-- Directory entry 0: %lx\n", entries[0]);
+    // ----- END TEST FOR create_dir_entry() ------
+
 }
 
 //When needed, create a new entry (new page table) in the page directory.
 //Allocates physical space for the memory and stores the reference to the address as an entry. 
 void* create_dir_entry(){
+    //Find an available slot in page Directory
+    //Find available page address
+    //Set the pointer of 'entry' to that address
 
+    int index = get_next_pde();
+    if(index == -1){
+        printf("--------------\nERROR: Page Directory is Full!\n--------------\n");
+    }
+    //Allocate Space for Page Table
+    //CHECKS TO SEE IF THE DIR SHOULD SPAN MULTIPLE PAGES
+    printf("\n--------------------------------------\n");
+    printf("Size of pte_t: %d Bytes\n", sizeof(pte_t));
+    int num_pt_entries = scalbn(1, num_table_bits);
+    printf("Number of entries in Table: %d\n", num_pt_entries);
+    int tab_size = num_pt_entries * sizeof(pte_t);
+    //int tab_size = 8192;
+    printf("Total Size of Table: %d\n", tab_size);
+    int num_pages_needed = tab_size/PGSIZE + ((tab_size % PGSIZE) != 0);
+    printf("Number of pages needed to store Table: %d\n", num_pages_needed);
+
+    //void* page = get_next_avail(num_phys_pages);
+    void* page;
+
+    //Check to see if there are enough contiguous pages when table size exceeds 1 page
+    //Set required bits in bitmap to 1
+    //Loop using num_pages_needed
+    int i = 0;
+    int count = 0;
+    int bits_for_map = sizeof(phys_map) * 8;
+    int start;
+    int bit;
+    print_bitmap(phys_map);
+    //Loop to find the start index of avaiable pages
+    while(i < bits_for_map || count < num_pages_needed-1){
+        bit = get_bit_at_index(phys_map, i);
+        if(bit == 1){
+            count = 0;
+        }
+        if(bit == 0){
+            if(count == 0){
+                start = i;
+            }
+            count++;
+        }
+        if(count >= num_pages_needed){
+            break;
+        }
+        // printf("Setting bit index %d\n", i);
+        // set_bit_at_index(phys_map, i);
+        i++;
+    }
+    //Check if there enough pages available (If count > 0)
+    if(count != num_pages_needed){
+        printf("Not enough pages available!\n");
+        printf("\n--------------------------------------\n");
+        return NULL;
+    }else{
+        //printf("Found contiguous pages starting from: %d\n", start);
+    }
+
+    //Loop to set the bits from start, until n iterations
+    for(i = start; i <= count; i++){
+        //printf("Setting bit index %d\n", i);
+        set_bit_at_index(phys_map, i);
+    }
+    print_bitmap(phys_map);
+
+    page = get_addr(start);
+    printf("Start Address of Allocated Page(s): %p\n", page);
+    entries[index] = (int) page;
+    printf("\n--------------------------------------\n");
+    return page;
+    
 }
 
 /*
@@ -431,5 +562,15 @@ char* put_in_phys(void* val, int offset, int size){
     memcpy(dest, val, size);
     
     return dest;
+}
+
+void print_bitmap(char* bitmap){
+    printf("Bitmap: ");
+    int bits_for_map = sizeof(bitmap) * 8;
+    int k = 0;
+    for(k = 0; k < bits_for_map; k++){
+        printf("%d",get_bit_at_index(phys_map,k));
+    }
+    printf("\n");
 }
 

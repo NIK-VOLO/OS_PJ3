@@ -81,5 +81,6 @@ static unsigned int get_top_bits(unsigned int value,  int num_bits);
 static unsigned int get_mid_bits (unsigned int value, int num_middle_bits, int num_lower_bits);
 static void set_bit_at_index(char *bitmap, int index);
 static int get_bit_at_index(char *bitmap, int index);
+void print_bitmap(char* bitmap);
 
 #endif
