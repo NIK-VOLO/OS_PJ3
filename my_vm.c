@@ -136,8 +136,31 @@ pte_t *translate(pde_t *pgdir, void *va) {
     */
 
 
-    //If translation not successfull
-    return NULL; 
+
+    // Check TLB
+    //TODO: TLB search code
+
+    // TLB miss, decompose virtual address
+    pde_index = get_top_bits(*(unsigned int*)va, num_dir_bits);
+    pte_index = get_mid_bits(*(unsigned int*)va, num_table_bits, num_dir_bits);
+    offset = get_mid_bits(*(unsigned int*)va, num_offset_bits, num_dir_bits + num_table_bits);
+
+    // Go to page table page from page directory
+    pt = pgdir[pde_index];
+    if (pt == NULL) {
+        //If translation not successfull
+        return NULL; 
+    }
+    // Go to physical memory from page table
+    phys_mem_loc = pt[pte_index];
+    if (phys_mem_loc == NULL) {
+        //If translation not successfull
+        return NULL; 
+    }
+    // Go to physical address from page table entry
+    phys_mem_with_offset = phys_mem_loc + offset;
+    // Return physical address
+    return phys_mem_with_offset;
 }
 
 
@@ -147,8 +170,7 @@ as an argument, and sets a page table entry. This function will walk the page
 directory to see if there is an existing mapping for a virtual address. If the
 virtual address is not present, then a new entry will be added
 */
-int
-page_map(pde_t *pgdir, void *va, void *pa)
+int page_map(pde_t *pgdir, void *va, void *pa)
 {
 
     /*HINT: Similar to translate(), find the page directory (1st level)
@@ -164,17 +186,27 @@ page_map(pde_t *pgdir, void *va, void *pa)
     }
     
     //Convert top bits to an index for Directory
-    top_bits = get_top_bits((unsigned int) va, num_dir_bits);
+    top_bits = get_top_bits(*(unsigned int*)va, num_dir_bits);
     printf("TOP BITS: %d", top_bits);
-    mid_bits = get_top_bits((unsigned int) va, num_table_bits);
+    mid_bits = get_mid_bits(*(unsigned int*)va, num_table_bits, num_dir_bits);
     printf("MID BITS: %d", mid_bits);
 
-
-
-    //Convert middle bits to and index for Page Table
-
-
-    return -1;
+    pt = pgdir[top_bits];
+    if (pt != NULL) {
+        // Page mapping already exists
+        mem = pt[mid_bits];
+        if (mem != NULL) {
+            // Page mapping exists with valid page table entry 
+            return 0
+        }
+        // Page mapping exists but page table entry does not
+        pt[mid_bits] = pa;
+        return 1
+    }
+    // Page table does not exist, create a new one
+    new_pt = create_dir_entry();
+    new_pt[mid_bits] = pa;
+    return 2
 }
 
 //Gets the starting address of a page based on page_num ("index" for the start of the page's memory block)
@@ -293,9 +325,107 @@ void put_value(void *va, void *val, int size) {
      * function.
      */
 
+    int num_pages_needed = (size / PGSIZE) + 1;
+    //TODO: Test to see if it's possible to fit this in physical memory
+
+    set_bitmap(1, num_pages_needed);
+
+    // Do the actual memory write
+    int num_pages_used = 0;
+    while (num_pages_used < num_pages_needed) {
+        int num_bytes_remaining = size - (num_pages_used * PGSIZE);
+        pte_t* next_phys_addr = get_next_avail();
+        // Make virtual address
+        //TODO: make virtual address for start of a new page
+        unsigned int temppleasechangeme = 99999999999999999999999;
+        page_map(entries, temppleasechangeme, next_phys_addr)
+        char* val_as_char = (char*)val;
+        if (num_bytes_remaining >= PGSIZE) {
+            char* region_to_write = get_mid_bits(*val_as_char, PGSIZE, num_pages_used * PGSIZE);
+            for i in range(PGSIZE) {
+                next_phys_addr[i] = region_to_write[i];
+            }
+        } else {
+            // Need to pad with zeroes
+            char* region_to_write = get_mid_bits(*val_as_char, num_bytes_remaining, num_pages_used * PGSIZE);
+            for i in range(num_bytes_remaining) {
+                next_phys_addr[i] = region_to_write[i];
+            }
+            for i in range(num_bytes_remaining, PGSIZE) {
+                next_phys_addr[i] = 0;
+            }
+        }
+        num_pages_used += 1;
+    }
+}
 
 
+// Given number of pages altered, sets the bitmap to value (0 or 1) in each location
+void set_bitmap(int value, int num_pages) {
+    // Below code copied from create_dir_entry()
 
+    //Check to see if there are enough contiguous pages when table size exceeds 1 page
+    //Set required bits in bitmap to 1
+    //Loop using num_pages_needed
+    int i = 0;
+    int count = 0;
+    //TODO: Change this so it's not always 32
+    int bits_for_map = sizeof(phys_map) * 8;
+    int start;
+    int bit;
+    printf("Bits for Physical Bitmap: %d --- %d\n", bits_for_map, sizeof(phys_map));
+    printf("Physical ");
+    print_bitmap(phys_map);
+
+    printf("Directory ");
+    print_bitmap(dir_map);
+    //Loop to find the start index of avaiable pages
+    while(i < bits_for_map || count < num_pages_needed-1){
+        bit = get_bit_at_index(phys_map, i);
+        if(bit == 1){
+            count = 0;
+        }
+        if(bit == 0){
+            if(count == 0){
+                start = i;
+            }
+            count++;
+        }
+        if(count >= num_pages_needed){
+            break;
+        }
+        // printf("Setting bit index %d\n", i);
+        // set_bit_at_index(phys_map, i);
+        i++;
+    }
+    //Check if there enough pages available (If count > 0)
+    if(count != num_pages_needed){
+        printf("Not enough pages available!\n");
+        printf("\n--------------------------------------\n");
+        return NULL;
+    }else{
+        //printf("Found contiguous pages starting from: %d\n", start);
+    }
+
+    //Loop to set the bits from start, until n iterations
+    for(i = 0; i < count; i++){
+        printf("Setting bit index %d\n", i);
+        if (value == 1) {
+            set_bit_at_index(phys_map, start+i);
+        } else {
+            free_bit_at_index(phys_map, start+i);
+        }
+    }
+
+    //Set bit in the Directory Map 
+    int index = get_next_pde();
+    printf("INDEX: %d\n", index);
+    if (value == 1) {
+        set_bit_at_index(dir_map, index);
+    } else {
+        free_bit_at_index(dir_map, index);
+    }
+    
 }
 
 
