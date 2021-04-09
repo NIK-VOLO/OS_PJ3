@@ -27,7 +27,7 @@ int main(int argc, char **argv){
 
 
     //----- TEST FOR a_malloc() -----
-    a_malloc(1024);
+    a_malloc(16000);
 
     //----- END TEST FOR a_malloc() -----
 

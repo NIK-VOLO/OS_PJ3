@@ -164,7 +164,7 @@ pte_t *translate(pde_t *pgdir, void *va) {
 
     // TLB miss, decompose virtual address
     unsigned int pde_index = get_top_bits(*(unsigned int*)va, num_dir_bits);
-    unsigned int pte_index = get_mid_bits(*(unsigned int*)va, num_table_bits, num_dir_bits);
+    unsigned int pte_index = get_mid_bits(*(unsigned int*)va, num_table_bits, num_offset_bits);
     unsigned int offset = get_mid_bits(*(unsigned int*)va, num_offset_bits, num_dir_bits + num_table_bits);
 
     // Go to page table page from page directory
@@ -212,10 +212,13 @@ int page_map(pde_t *pgdir, void *va, void *pa)
     
     //Convert top bits to an index for Directory
     top_bits = get_top_bits(*(unsigned int*)va, num_dir_bits);
-    printf("TOP BITS: %d", top_bits);
-    mid_bits = get_mid_bits(*(unsigned int*)va, num_table_bits, num_dir_bits);
-    printf("MID BITS: %d", mid_bits);
+    printf("TOP BITS: %d\n", top_bits);
+    mid_bits = get_mid_bits(*(unsigned int*)va, num_table_bits, num_offset_bits);
+    printf("MID BITS: %d\n", mid_bits);
 
+    //Decrement these indexes (because they are incremented when creating virtual address)
+    top_bits--;
+    mid_bits--;
     
     if (&pgdir[top_bits] != NULL) {
         pde_t pt_address = pgdir[top_bits];
@@ -355,10 +358,27 @@ void *a_malloc(unsigned int num_bytes) {
    }
     printf("Next open page: %p\n", free_page);
 
-    create_virt_addr();
+    unsigned long long virt = create_virt_addr();
+    if(virt == 0){
+        printf("PDE Not found. Double checking . . . \n");
+        int t = get_next_pde(0);
+        if(t == -1){
+            printf("--> PDE is full. . .");
+            return NULL;
+        }else{
+            create_dir_entry();
+            virt = create_virt_addr();
+            if(virt == 0){
+                printf("\n **** NO PDE FOUND AGAIN --> BUG ****\n");
+            }
+        }
+    }
+    printf("Generated Virtual Address: %llx\n", virt);
+    void* virt_addr = (void*) &virt;
     
+    page_map(entries, virt_addr, free_page);
     
-    return NULL;
+    return virt_addr;
 }
 
 /* Responsible for releasing one or more memory pages using virtual address (va)
@@ -474,14 +494,15 @@ int set_bitmap(char* bitmap, int value, int num_pages_needed, int num_positions)
 
     //Loop to set the bits from start, until n iterations
     for(i = 0; i < count; i++){
-        //printf("Setting bit index %d\n", i);
+        //printf("Setting bit index %d\n", start+i);
         if (value == 1) {
             set_bit_at_index(bitmap, num_positions, start+i);
         } else {
             free_bit_at_index(bitmap, num_positions, start+i);
         }
     }
-
+    // printf("Result: ");
+    // print_bitmap(bitmap, 0);
     return start;
     
 }
@@ -721,16 +742,36 @@ unsigned long long create_virt_addr(){
     int start = 0;
 
     //TESTS 
-    // free_bit_at_index(dir_map, num_pd_entries, 0);
-    set_bit_at_index(dir_map, num_pd_entries, 1);
-    int n = 0;
-    for(n = 0; n < 1023; n++){
-        set_bit_at_index((char*)&table_maps[0], num_table_entries, n);
-    }
+    //free_bit_at_index(dir_map, num_pd_entries, 0);
+    //set_bit_at_index(dir_map, num_pd_entries, 1);
+    
+    // int n = 0;
+    // for(n = 0; n < 1024; n++){
+    //     set_bit_at_index((char*)&table_maps[0], num_table_entries, n);
+    // }
+    
+    // print_bitmap((char*)&table_maps[0], 0);
+    // print_bitmap((char*)&table_maps[0], 1);
+    // print_bitmap((char*)&table_maps[0], 2);
+    // print_bitmap((char*)&table_maps[0], 31);
+    // print_bitmap((char*)&table_maps[31], 0);
+    // print_bitmap((char*)&table_maps[0], 32);
+
+    // print_bitmap((char*)&table_maps[1], 2);
+    // print_bitmap((char*)&table_maps[2], 0);
+
+    //set_bit_at_index((char*) &table_maps[1], num_table_entries, 0);
+    //print_bitmap((char*)&table_maps[0]+4, 0);
+    //print_bitmap((char*)&table_maps[1], 0);
+
+    // printf("Table map 0: %p -- %p\n", &table_maps[0], &table_maps[0]+0);
+    // printf("Table map 1: %p -- %p\n", &table_maps[4], &table_maps[0]+4);
+    // printf("Table map 2: %p -- %p\n", &table_maps[8], &table_maps[0]+8);
+    
     //END TESTS
 
-    printf("Directory ");
-    print_bitmap(dir_map, 0);
+    //printf("Directory ");
+    //print_bitmap(dir_map, 0);
     // set_bit_at_index((char*)&table_maps[0], num_table_entries, 0);
     // print_bitmap((char*)&table_maps[0], 0);
     for(i = 0; i < num_pd_entries; i++){
@@ -739,20 +780,21 @@ unsigned long long create_virt_addr(){
             for(k = 0; k < num_table_entries; k++){
                 //Find the first UNallocated slot in the table
                 
-                value_table = get_bit_at_index((char*)&table_maps[i], num_table_entries, k);
+                //The Index [i * 32] is to reach the next chunk of bits representing the bitmap for the ith table
+                value_table = get_bit_at_index((char*)&table_maps[i*32], num_table_entries, k); 
                 //printf("I = %d K = %d -- BIT in table: %d\n", i, k, value_table);
                 if(value_table == 0){
                     //Found slot --> Create virtual address from this and return
                     //printf("Index in Directory: %d -- In table: %d\n", i, k);
                     //MAKE THE START INDEX 1 NOT 0 ==> add +1 to the index and make virtual address from that
                     //  Translate this back by -1 when break down a VA
-                    int dir_index = i+1;
-                    int tab_index = k+1;
-                    printf("dir_index: %d -- tab_index: %d\n", dir_index, tab_index);
-                    printf("Result before: %llx\n", result);
+                    int dir_index = i + 1;
+                    int tab_index = k + 1;
+                    //printf("dir_index: %d -- tab_index: %d\n", dir_index, tab_index);
+                    // printf("Result before: %llx\n", result);
                     int bit;
                     
-                    printf("Start = %d\n", start);
+                    // printf("Start = %d\n", start);
 
                     //Loop to set offset bits to 0
                     for(i = 0; i < num_offset_bits; i++){
@@ -761,8 +803,8 @@ unsigned long long create_virt_addr(){
                     }
 
                     start = start+i; //Save the last position
-                    printf("\nStart = %d\n", start);
-                    //printf(" ");
+                    // printf("\nStart = %d\n", start);
+                    printf(" ");
                     //Loop to get middle bits table index
                     for(i = 0; i < num_table_bits; i++){
                         bit = get_bit_at_index((char*) &tab_index, num_table_bits, i);
@@ -773,8 +815,8 @@ unsigned long long create_virt_addr(){
                     }
 
                     start = start+i;
-                    printf("\nStart = %d\n", start);
-                    //printf(" ");
+                    // printf("\nStart = %d\n", start);
+                    printf(" ");
                     //Loop to get bits for higher bits from dir index
                     for(i = 0; i < num_dir_bits; i++){
                         bit = get_bit_at_index((char*) &dir_index, num_dir_bits, i);
@@ -784,9 +826,9 @@ unsigned long long create_virt_addr(){
                         }
                     }
                     printf("\n");
-                    printf("Result: ");
-                    print_bitmap((char*) &result, 0);
-                    printf("Result After: %llx\n", result);
+                    //printf("Result: ");
+                    //print_bitmap((char*) &result, 0);
+                    printf("Result VA: %llx\n", result);
                     return result;
                 }
             }
@@ -794,23 +836,8 @@ unsigned long long create_virt_addr(){
         
     }
 
-    printf("No more memory available, sorry. . .\n ");
+    printf("No memory currently available. . .\n ");
     return 0;
-
-    //Look for open position in linked page table
-    //  If there are no open entries, must find the next available directory entry
-    //      Use a loop -- Break when an available slot is found
-
-
-    // int x = 10;
-    // int i = 0;
-    // int bit;
-    // printf("Bits: ");
-    // for (i = 0; i < 32; i++){
-    //     bit = (x & ( 1 << i )) >> i;
-    //     printf("%d", bit);
-    // }
-    // printf("\n");
 }
 
 // HW3 functions
