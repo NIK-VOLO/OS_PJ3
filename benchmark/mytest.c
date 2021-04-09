@@ -9,7 +9,7 @@
 
 int main(int argc, char **argv){
     //TEST set_physical_mem()
-    set_physical_mem();
+    //set_physical_mem();
 
     // //Integer Test
     // int x = 4;
@@ -23,7 +23,14 @@ int main(int argc, char **argv){
     // printf("%s\n", dest);
 
     //page_dir* ptr;
-    page_dir_init();
+    //page_dir_init();
+
+
+    //----- TEST FOR a_malloc() -----
+    a_malloc(1024);
+
+    //----- END TEST FOR a_malloc() -----
+
 
     return 0;
 }
