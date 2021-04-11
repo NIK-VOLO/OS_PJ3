@@ -84,5 +84,6 @@ static void set_bit_at_index(char *bitmap, int num_entries, int index);
 static int get_bit_at_index(char *bitmap, int num_entries, int index);
 static void free_bit_at_index(char *bitmap, int num_entries, int index);
 void print_bitmap(char* bitmap, int chunk);
+void print_arbitrary_bits(void* location, int num_bits);
 
 #endif

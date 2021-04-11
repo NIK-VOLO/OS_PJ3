@@ -222,31 +222,51 @@ int page_map(pde_t *pgdir, void *va, void *pa)
     
 
     pde_t pt_no_exist = 0;
-    if (DEBUG) printf("TOP BITS: %d\n", top_bits);
+    if (DEBUG) printf("TOP BITS: ");
+    print_arbitrary_bits(&top_bits, num_dir_bits);
     pde_t pt_addr = pgdir[top_bits];
     if (DEBUG) printf("Page table address %lx\n", pt_addr);
-    if (get_bit_at_index(dir_map, num_pd_entries, top_bits)) {
+    int value_dir = get_bit_at_index(dir_map, num_pd_entries, top_bits);
+    if(DEBUG) printf("Current dir bitmap: %d\n", value_dir);
+    if (value_dir) {
         // Page mapping already exists
         //pte_t* mem = pt[mid_bits];
         pte_t page_no_exist = 0;
-        if (DEBUG) printf("MID BITS: %d\n", mid_bits);
+        if (DEBUG) printf("MID BITS: ");
+        print_arbitrary_bits(&mid_bits, num_table_bits);
         pde_t* page_table = &pt_addr;
         pte_t page_addr = page_table[mid_bits];
         if (DEBUG) printf("Page address %lx\n", page_addr);
         int num_table_entries = scalbn(1, num_table_bits);
-        printf("%lx\n", (char*)&table_maps[top_bits*32]);
+        // printf("dElEtEmEpLeAsE -- value_table: ");
+        // for (int i = 0; i < 10; i++) {
+        //     printf(" oo! %s", (char*)&table_maps[top_bits*32]);
+        // }
+        // printf("\n");
         int value_table = get_bit_at_index((char*)&table_maps[top_bits*32], num_table_entries, mid_bits);
+        // printf("part 4\n");
+        if(DEBUG) printf("Current table bitmap: %d\n", value_table);
         if (value_table) {
             // Page mapping exists with valid page table entry 
             if (DEBUG) printf("Page mapping already exists.\n");
             return 0;
         }
         // Page mapping exists but page table entry does not
+        // printf("Setting PTE\n");
+        // printf("%lx\n", (unsigned long int)pa);
         page_table[mid_bits] = (pte_t) &pa;
         // Set bitmap for new page
         // Top bits are page table number within dir
         // Get corresponding bitmap
+        // printf("Getting associated bitmap\n");
+        // printf("top bits: %d\n", top_bits);
+        // print_bitmap((char*)&table_maps[0], 0);
         char* assoc_bitmap = table_maps[top_bits*32]; // 32 might need to change
+        // printf("seggy?\n");
+        printf("Associated ");
+        print_bitmap(assoc_bitmap, 0); // Segfault here
+        // Segfault happens at get_bit_at_index(bitmap, bits_for_map*(chunk+1), k+(index*8)));
+        // Maybe something wrong with table_maps[top_bits*32]?
         set_bitmap(assoc_bitmap, 1, 1, scalbn(1, num_table_bits));
 
         if (DEBUG) printf("After physical ");
@@ -969,11 +989,15 @@ static void free_bit_at_index(char *bitmap, int num_entries, int index){
 static int get_bit_at_index(char *bitmap, int num_entries, int index)
 {
     //Same as example 3, get to the location in the character bitmap array
+    // printf("part 1\n");
     char *region = ((char *) bitmap) + (index / 8);
     
     //Create a value mask that we are going to check if bit is set or not
+    // printf("part 2\n");
     char bit = 1 << (index % 8);
     
+    // printf("part 3\n");
+    // printf("region: %lx, index: %d\n", region, index);
     return (int)(*region >> (index % 8)) & 0x1;
 }
 
@@ -997,8 +1021,29 @@ char* put_in_phys(void* val, int offset, int size){
     return dest;
 }
 
+void print_arbitrary_bits(void* location, int num_bits) {
+    char* arb = (char*) location;
+    int num_full_chars = num_bits / 8;
+    //printf("num full chars %d\n", num_full_chars);
+    int num_leftovers = num_bits % 8;
+    //printf("num leftovers %d\n", num_leftovers);
+    for (int i = 0; i < num_full_chars; i++) {
+        char cur = arb[i];
+        for (int j = 0; j < 8; j++) {
+            int bit = cur >> j & 1;
+            printf("%d", bit);
+        }
+    }
+    for (int j = 0; j < num_leftovers; j++) {
+        char cur = arb[num_full_chars];
+        int bit = cur >> j & 1;
+        printf("%d", bit);
+    }
+    printf("\n");
+}
+
 void print_bitmap(char* bitmap, int chunk){
-    printf("Bitmap Chunk %d: ", chunk);
+    printf("bitmap Chunk %d: ", chunk);
     int index = chunk*4;
     int bits_for_map = sizeof(&bitmap[index]) * 8;
     int k;
