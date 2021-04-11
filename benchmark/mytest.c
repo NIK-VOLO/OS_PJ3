@@ -8,8 +8,27 @@
 #define ARRAY_SIZE 400
 
 int main(int argc, char **argv){
-    //TEST set_physical_mem()
-    //set_physical_mem();
+    // Setup for future tests
+    int arr_size = 400;
+    printf("\n ALLOCATING a \n");
+    int *a = a_malloc(arr_size);
+    int old_a = (int)a;
+    printf("\n ALLOCATING b \n");
+    void *b = a_malloc(arr_size);
+    printf("\n ALLOCATING c \n");
+    void *c = a_malloc(arr_size);
+
+    printf("Addresses of the allocations: %x, %x, %x\n", (int)a, (int)b, (int)c);
+
+    // Testing translate():
+    // Called
+    
+
+    // Testing translate()
+    // Nothing here yet
+
+    // Testing page_map()
+    // Nothing here yet
 
     // //Integer Test
     // int x = 4;
@@ -27,10 +46,9 @@ int main(int argc, char **argv){
 
 
     //----- TEST FOR a_malloc() -----
-    a_malloc(16000);
+    //a_malloc(16000);
 
     //----- END TEST FOR a_malloc() -----
-
 
     return 0;
 }
