@@ -33,6 +33,10 @@ typedef unsigned long pde_t;
 
 #define ADDR_BITS 32
 
+#define PGMAP_NOACTION 0
+#define PGMAP_NEWPTE 1
+#define PGMAP_NEWTABLEANDPTE 2
+
 //Structure to store information for every tlb entry. 
 struct tlb_entry {
     
