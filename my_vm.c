@@ -29,6 +29,9 @@ int num_offset_bits;
 int num_dir_bits;
 int num_table_bits;
 
+int num_table_entries;
+int num_dir_entries;
+
 int num_pd_entries;
 
 char** table_maps;
@@ -42,7 +45,8 @@ void set_physical_mem() {
     //your memory you are simulating 
     unsigned long long length = MEMSIZE;
     phys = mmap(NULL,length, PROT_READ|PROT_WRITE, MAP_ANON|MAP_PRIVATE|MAP_NORESERVE, -1, 0); //DOUBLE CHECK THESE PARAMETERS LATER
-    
+    memset(phys, 0, length);
+
     if (phys == MAP_FAILED){
         handle_mmap_error("mmap");
     }else{
@@ -75,8 +79,8 @@ void set_physical_mem() {
     memset(phys_map,0, size_of_bitmap);
     set_bit_at_index(phys_map, num_phys_pages,39);
 
-    int num_table_entries = scalbn(1, num_table_bits);
-    int num_dir_entries = scalbn(1, num_dir_bits);
+    num_table_entries = scalbn(1, num_table_bits);
+    num_dir_entries = scalbn(1, num_dir_bits);
     int table_map_bytes = (num_table_entries * num_dir_entries)/8;
     if (DEBUG) printf("Bytes needed for every page table bitmap: %d\n", table_map_bytes);
     table_maps = malloc(table_map_bytes);
@@ -155,23 +159,24 @@ pte_t *translate(pde_t *pgdir, void *va) {
     unsigned int pte_index = get_mid_bits(*(unsigned int*)va, num_table_bits, num_offset_bits);
     unsigned int offset = get_mid_bits(*(unsigned int*)va, num_offset_bits, num_dir_bits + num_table_bits);
 
-    // Go to page table page from page directory
-    
-    if (&pgdir[pde_index] == NULL) {
+    // Go to page table from page directory
+    pde_t pgtable = pgdir[pde_index];
+    if (!pgtable) {
         //If translation not successfull
         return NULL; 
     }
-    pde_t pt_address = pgdir[pde_index];
+
     // Go to physical memory from page table
-    pte_t* pt = (pte_t*) pt_address;
-    
-    if (&pt[pte_index] == NULL) {
+    pde_t *pgtable_addr = &pgtable;
+    pte_t virt_page = (pte_t) pgtable_addr[pte_index];
+    if (!virt_page) {
         //If translation not successfull
         return NULL; 
     }
     // Go to physical address from page table entry
-    pte_t phys_mem_loc = pt[pte_index + offset];
-    pte_t* phys_mem_with_offset = (pte_t*) phys_mem_loc;
+    pte_t *virt_page_addr = &virt_page;
+    pte_t phys_page = virt_page_addr[pte_index + offset];
+    pte_t* phys_mem_with_offset = (pte_t*) phys_page;
     // Return physical address
     return phys_mem_with_offset;
 }
@@ -197,7 +202,7 @@ int page_map(pde_t *pgdir, void *va, void *pa)
         return -1;
     }
 
-    if (DEBUG) printf("\nSETTING PAGE TABLE ENTRY\n");
+    if (DEBUG) printf("SETTING PAGE TABLE ENTRY\n");
     
     // Convert top bits to an index for Directory
     top_bits = get_top_bits(*(unsigned int*)va, num_dir_bits);
@@ -216,7 +221,7 @@ int page_map(pde_t *pgdir, void *va, void *pa)
     if (value_dir) {
 
         // Page table already exists
-        if (DEBUG) printf("Attempting to place PTE in table %d of %d.\n", top_bits+1, num_pd_entries);
+        if (DEBUG) printf("Attempting to place PTE in PDE %d of %d.\n", top_bits+1, num_pd_entries);
 
         // Get page table and physical page address
         pde_t* page_table = &pt_addr;
@@ -240,13 +245,15 @@ int page_map(pde_t *pgdir, void *va, void *pa)
 
         // Setting table bitmap
         char* table_start = (char*)&table_maps[top_bits*32];
-        //printf("%d\n", table_start);
-        set_bit_at_index(table_start, num_table_entries, mid_bits);
+        char* mb_str = print_arbitrary_bits(&mid_bits, 10);
+        char* tb_str = print_arbitrary_bits(&top_bits, 10);
+        set_bit_at_index((char*)&table_maps[top_bits*32], num_table_entries, mid_bits);
 
         // Setting physical bitmap
         int bit_to_set = ((char*)pa - phys) / PGSIZE;
         set_bit_at_index(phys_map, num_table_entries, bit_to_set);
 
+        if (DEBUG) printf("DONE SETTING PAGE TABLE ENTRY\n");
         return PGMAP_NEWPTE;
     }
 
@@ -267,6 +274,7 @@ int page_map(pde_t *pgdir, void *va, void *pa)
     // Mapping PTE to physical page
     temp[mid_bits] = (pte_t) &pa;
 
+    if (DEBUG) printf("DONE SETTING PAGE TABLE ENTRY (WITH NEW PAGE TABLE)\n");
     return PGMAP_NEWTABLEANDPTE;
 }
 
@@ -306,7 +314,7 @@ void *get_next_avail(int num_pages, int num_needed) {
     if(index == -1){
         return NULL;
     }
-    if (DEBUG) printf("NEXT AVAILABLE INDEX: %d\n", index);
+    if (DEBUG) printf("Next available index: %d\n", index);
     return get_addr(index);
 }
 
@@ -322,11 +330,11 @@ int get_next_pde(int open) {
     int value = get_bit_at_index(dir_map, num_pd_entries, i);
     //printf("Bit: %d at index: %d\n", value, i);
     if(value == open){
-        if (DEBUG) printf("(1) OPEN INDEX: %d Value: %d\n", i, value);
+        //if (DEBUG) printf("(1) OPEN INDEX: %d Value: %d\n", i, value);
         //Get the address of that position
         //PD address + bytes    
         address = &entries[i];
-        if (DEBUG) printf("Dir: %p -- Entry: %p\n", entries, address);
+        //if (DEBUG) printf("Dir: %p -- Entry: %p\n", entries, address);
         return i;
         //return address;
     }
@@ -336,11 +344,11 @@ int get_next_pde(int open) {
         value = get_bit_at_index(dir_map, num_pd_entries, i);
         //printf("Bit: %d at index: %d\n", value, i);
         if(value == open){
-            if (DEBUG) printf("(2) OPEN INDEX: %d Value: %d\n", i, value);
+            //if (DEBUG) printf("(2) OPEN INDEX: %d Value: %d\n", i, value);
             //Get the address of that position
             //PD address + bytes    
             address = &entries[i];
-            if (DEBUG) printf("Dir: %p -- Entry: %p\n", entries, address);
+            //if (DEBUG) printf("Dir: %p -- Entry: %p\n", entries, address);
             return i;
            //return address;
         }
@@ -355,7 +363,7 @@ and used by the benchmark
 */
 void *a_malloc(unsigned int num_bytes) {
 
-    if(DEBUG) printf("\nMALLOC CALL\n");
+    if(DEBUG) printf("MALLOC CALL\n");
 
     int num_pages_needed = num_bytes/PGSIZE + ((num_bytes % PGSIZE) != 0);
 
@@ -363,9 +371,10 @@ void *a_malloc(unsigned int num_bytes) {
      * HINT: If the physical memory is not yet initialized, then allocate and initialize.
      */
     if(phys_created == 0 ){
-        if (DEBUG) printf("\nINITIALIZING SIMULATED PHYSICAL MEMORY\n");
+        if (DEBUG) printf("INITIALIZING SIMULATED PHYSICAL MEMORY\n");
         set_physical_mem();
         phys_created = 1;
+        printf("DONE INITIALIZING SIMULATED PHYSICAL MEMORY\n");
     }
 
    /* 
@@ -376,9 +385,10 @@ void *a_malloc(unsigned int num_bytes) {
     */
 
    if(page_dir_created == 0 ){
-       if (DEBUG) printf("\nINITIALIZING PAGE DIRECTORY\n");
+       if (DEBUG) printf("INITIALIZING PAGE DIRECTORY\n");
        page_dir_init();
        page_dir_created = 1;
+       printf("DONE INITIALIZING PAGE DIRECTORY.\n");
    }
 
    
@@ -391,7 +401,7 @@ void *a_malloc(unsigned int num_bytes) {
        if (DEBUG) printf("ERROR: No available pages were found. . . \n");
        return NULL;
    }
-    if (DEBUG) printf("Next open page: %p\n", free_page);
+    if (DEBUG) printf("Next open physical page: %p\n", free_page);
 
     unsigned long long virt = create_virt_addr();
     if(virt == 0){
@@ -408,19 +418,37 @@ void *a_malloc(unsigned int num_bytes) {
             }
         }
     }
-    if (DEBUG) printf("Generated Virtual Address: %llx\n", virt);
+    if (DEBUG) printf("Generated Virtual Address: 0x%llx\n", virt);
     void* virt_addr = (void*) &virt;
     
     page_map(entries, virt_addr, free_page);
 
-    printf("Directories after a_malloc():\n");
-    printf("Directory ");
-    print_bitmap(dir_map, 0);
-    printf("Page table ");
-    print_bitmap((char*)&table_maps[0], 0);
-    printf("Physical ");
-    print_bitmap(phys_map, 0);
+    if (1) {
+        printf("Bitmaps after a_malloc():\n");
+        printf("Directory ");
+        print_bitmap(dir_map, 0);
+        printf("Page table ");
+        print_bitmap((char*)&table_maps[0], 0);
+        printf("Physical ");
+        print_bitmap(phys_map, 0);
+    }
     
+    if(DEBUG) printf("DONE MALLOC CALL\n\n");
+
+    // if (0) {
+    //     printf("First Kilobyte of physical memory:\n");
+    //     int lu_printed = 0;
+    //     int lu_wanted = 128;
+    //     while (lu_printed < lu_wanted) {
+    //         int block_start = lu_printed * 4;
+    //         long unsigned int lu1 = *((long unsigned int*)phys+block_start);
+    //         long unsigned int lu2 = *((long unsigned int*)phys+block_start+4);
+    //         long unsigned int lu3 = *((long unsigned int*)phys+block_start+8);
+    //         long unsigned int lu4 = *((long unsigned int*)phys+block_start+12);
+    //         printf("%lu %lu %lu %lu\n", lu1, lu2, lu3, lu4);
+    //         lu_printed += 4;
+    //     }
+    // }
     return virt_addr;
 }
 
@@ -435,6 +463,11 @@ void a_free(void *va, int size) {
      * Part 2: Also, remove the translation from the TLB
      */
 
+    int top_bits = get_top_bits(*(unsigned int*)va, num_dir_bits);
+    int mid_bits = get_mid_bits(*(unsigned int*)va, num_table_bits, num_offset_bits);    
+    top_bits--;
+    mid_bits--;
+
     int num_pages = size / PGSIZE;
     int num_pages_freed = 0;
 
@@ -443,11 +476,26 @@ void a_free(void *va, int size) {
         // Clear TLB entries
         //TODO
 
-        // Clear PTE
-        //TODO
+        // Clear table bitmap
+        char* table_start = (char*)&table_maps[top_bits*32];
+        char* mb_str = print_arbitrary_bits(&mid_bits, 10);
+        char* tb_str = print_arbitrary_bits(&top_bits, 10);
+        free_bit_at_index((char*)&table_maps[top_bits*32], num_table_entries, mid_bits);
 
-        // Clear dir entry if page table now empty
-        //TODO
+        // Clear physical bitmap
+        pte_t *pa = translate(entries, va);
+        int bit_to_set = ((char*)pa - phys) / PGSIZE;
+        free_bit_at_index(phys_map, num_table_entries, bit_to_set);
+
+        // Clear dir bitmap if PDE now empty
+        int pde_empty = 1;
+        for (int i = 0; i < num_table_entries; i++) {
+            int value = get_bit_at_index((char*)&table_maps[i*32], num_table_entries, i);
+            if (value) pde_empty = 0;
+        }
+        if (pde_empty) {
+            free_bit_at_index(dir_map, num_pd_entries, top_bits);
+        }
 
         num_pages_freed += 1;
     }
@@ -466,40 +514,64 @@ void put_value(void *va, void *val, int size) {
      * function.
      */
 
-    int num_pages_needed = (size / PGSIZE) + 1;
+    int num_pages_needed = (size / PGSIZE);
+    if (size % PGSIZE > 0) num_pages_needed += 1;
+
     //TODO: Test to see if it's possible to fit this in physical memory
 
-    //set_bitmap(phys_map, 1, num_pages_needed, num_phys_pages);
-
-    // Do the actual memory write
     int num_pages_used = 0;
-    while (num_pages_used < num_pages_needed) {
-        int num_bytes_remaining = size - (num_pages_used * PGSIZE);
-        pte_t* next_phys_addr = get_next_avail(num_phys_pages, num_pages_needed);
-        // Make virtual address
-        //TODO: make virtual address for start of a new page
-        unsigned int temppleasechangeme = 1000000000;
-        page_map(entries, &temppleasechangeme, next_phys_addr);
-        char* val_as_char = (char*)val;
-        unsigned int* int_val = (unsigned int*) val;
-        int i = 0;
-        if (num_bytes_remaining >= PGSIZE) {
-            unsigned int* region_to_write = (unsigned int*) get_mid_bits(*int_val, PGSIZE, num_pages_used * PGSIZE);
-            for (i = 0; i < PGSIZE; i++) {
-                next_phys_addr[i] = region_to_write[i];
-            }
+    int start = 0;
+    while(num_pages_used < num_pages_needed) {
+        
+        // Constructing a path to a virtual page
+        int top_bits = get_top_bits(*(unsigned int*)va, num_dir_bits);
+        int start_mid_bits = get_mid_bits(*(unsigned int*)va, num_table_bits, num_offset_bits);
+        int cur_mid_bits = start_mid_bits + num_pages_used;
+        unsigned long long virt = create_va_from_bits(top_bits, cur_mid_bits, 0);
+        void* cur_va = (void*) &virt;
+
+        // Going from the virtual page to a physical one
+        pte_t *pa = translate(entries, cur_va);
+
+        // Preparing a chunk of val to put into pa
+        // val_chunk starts as a page-sized bunch of zeroes
+        char* val_chunk = malloc((PGSIZE / sizeof(char)));
+        memset(val_chunk, 0, PGSIZE / sizeof(char));
+
+        if (num_pages_used == (size / PGSIZE) && num_pages_needed > (size / PGSIZE)) {
+            // Need to place in a chunk of less than one page
+            int bit;
+            for (int i = 0; i < size % PGSIZE; i++) {
+                int bit = get_bit_at_index(val, size, start+i);
+                if (bit == 1) {
+                    set_bit_at_index((char*) val_chunk, PGSIZE, i);
+                }
+            }            
         } else {
-            // Need to pad with zeroes
-             unsigned int* region_to_write = (unsigned int*) get_mid_bits(*int_val, num_bytes_remaining, num_pages_used * PGSIZE);
-            for (i = 0; i < num_bytes_remaining; i++) {
-                next_phys_addr[i] = region_to_write[i];
-            }
-            for (i = num_bytes_remaining; i < PGSIZE; i++) {
-                next_phys_addr[i] = 0;
+            // Chunk will fill an entire page
+            int bit;
+            for (int i = 0; i < PGSIZE; i++) {
+                int bit = get_bit_at_index(val_chunk, PGSIZE, i);
+                if (bit == 1) {
+                    set_bit_at_index((char*) pa, PGSIZE, i);
+                }
             }
         }
+        start += PGSIZE;
+
+        // Put that chunk into physical memory
+        int bit;
+        for (int i = 0; i < PGSIZE; i++) {
+            int bit = get_bit_at_index(val_chunk, PGSIZE, i);
+            if (bit == 1) {
+                set_bit_at_index((char*) pa, PGSIZE, i);
+            }
+        }
+
+        free(val_chunk);
         num_pages_used += 1;
     }
+    
 }
 
 
@@ -566,7 +638,6 @@ int set_bitmap(char* bitmap, int value, int num_pages_needed, int num_positions)
     // printf("Result: ");
     // print_bitmap(bitmap, 0);
     return start;
-    
 }
 
 
@@ -576,6 +647,7 @@ void get_value(void *va, void *val, int size) {
     /* HINT: put the values pointed to by "va" inside the physical memory at given
     * "val" address. Assume you can access "val" directly by derefencing them.
     */
+
 
 
 
@@ -627,23 +699,23 @@ void page_dir_init(){
 
     //NOTE: 
     //  NEED TO ADD CHECKS TO SEE IF THE DIR SHOULD SPAN MULTIPLE PAGES (POSSIBLE)
-    if (DEBUG) printf("Size of pde_t: %d Bytes\n", sizeof(pde_t));
+    // if (DEBUG) printf("Size of pde_t: %d Bytes\n", sizeof(pde_t));
     num_pd_entries = scalbn(1, num_dir_bits);
-    if (DEBUG) printf("Number of entries in directory: %d\n", num_pd_entries);
+    // if (DEBUG) printf("Number of entries in directory: %d\n", num_pd_entries);
     dir_map = (char*) malloc(num_pd_entries/8);
     memset(dir_map, 0, (num_pd_entries/8));
-    if (DEBUG) printf("Size of DIRECTORY Bitmap: %d\n", (num_pd_entries/8));
+    // if (DEBUG) printf("Size of DIRECTORY Bitmap: %d\n", (num_pd_entries/8));
     int dir_size = num_pd_entries * sizeof(pde_t);
-    if (DEBUG) printf("Total Size of directory: %d\n", dir_size);
+    // if (DEBUG) printf("Total Size of directory: %d\n", dir_size);
     int num_pages_needed = dir_size/PGSIZE + ((dir_size % PGSIZE) != 0);
-    if (DEBUG) printf("Number of pages needed to store directory: %d\n", num_pages_needed);
+    // if (DEBUG) printf("Number of pages needed to store directory: %d\n", num_pages_needed);
 
 
     //Set required bits in bitmap to 1
     //Loop using num_pages_needed
     int i;
     for(i = 0; i < num_pages_needed; i++){
-        if (DEBUG) printf("Setting bit index %d\n", i);
+        // if (DEBUG) printf("Setting bit index %d\n", i);
         set_bit_at_index(phys_map, num_phys_pages, i);
     }
     
@@ -652,7 +724,7 @@ void page_dir_init(){
     // ----- TEST FOR ADDRESS MAPPING -----
     void* addr = phys;
     entries = (pde_t*) addr;
-    if (DEBUG) printf("Phys: %p -- Directory: %p\n", phys, entries);
+    // if (DEBUG) printf("Phys: %p -- Directory: %p\n", phys, entries);
     // entries[0] = 0xb7d9f800;
     // printf("|-- Directory entry 0: %lx\n", entries[0]);
     // int* val = (int*) entries[0];
@@ -671,6 +743,7 @@ void page_dir_init(){
 
     // ----- TEST FOR create_dir_entry() ------
     //set_bit_at_index(dir_map, num_pd_entries, 0);
+    if (DEBUG) printf("Creating first page table. \n");
     create_dir_entry();
     // create_dir_entry();
     // create_dir_entry();
@@ -694,15 +767,15 @@ void* create_dir_entry(){
     }
     //Allocate Space for Page Table
     //CHECKS TO SEE IF THE DIR SHOULD SPAN MULTIPLE PAGES
-    if (DEBUG) printf("\nALLOCATING SPACE FOR PAGE TABLE\n");
-    if (DEBUG) printf("Size of pte_t: %d Bytes\n", sizeof(pte_t));
+    if (DEBUG) printf("ALLOCATING SPACE FOR PAGE TABLE\n");
+    // if (DEBUG) printf("Size of pte_t: %d Bytes\n", sizeof(pte_t));
     int num_pt_entries = scalbn(1, num_table_bits);
-    if (DEBUG) printf("Number of entries in Table: %d\n", num_pt_entries);
+    // if (DEBUG) printf("Number of entries in Table: %d\n", num_pt_entries);
     int tab_size = num_pt_entries * sizeof(pte_t);
     //int tab_size = 8192;
-    if (DEBUG) printf("Total Size of Table: %d\n", tab_size);
+    // if (DEBUG) printf("Total Size of Table: %d\n", tab_size);
     int num_pages_needed = tab_size/PGSIZE + ((tab_size % PGSIZE) != 0);
-    if (DEBUG) printf("Number of pages needed to store Table: %d\n", num_pages_needed);
+    // if (DEBUG) printf("Number of pages needed to store Table: %d\n", num_pages_needed);
 
     //void* page = get_next_avail(num_phys_pages);
     void* page;
@@ -715,12 +788,12 @@ void* create_dir_entry(){
     int bits_for_map = num_phys_pages;
     int start;
     int bit;
-    if (DEBUG) printf("Bits for Physical Bitmap: %d\n", bits_for_map);
-    if (DEBUG) printf("Before physical ");
-    if (DEBUG) print_bitmap(phys_map, 0);
+    // if (DEBUG) printf("Bits for Physical Bitmap: %d\n", bits_for_map);
+    // if (DEBUG) printf("Before physical ");
+    // if (DEBUG) print_bitmap(phys_map, 0);
 
-    if (DEBUG) printf("Before directory ");
-    if (DEBUG) print_bitmap(dir_map,0);
+    // if (DEBUG) printf("Before directory ");
+    // if (DEBUG) print_bitmap(dir_map,0);
     //Loop to find the start index of avaiable pages
     while(i < bits_for_map || count < num_pages_needed-1){
         bit = get_bit_at_index(phys_map, num_phys_pages, i);
@@ -756,20 +829,21 @@ void* create_dir_entry(){
     }
 
     //Set bit in the Directory Map 
-    if (DEBUG) printf("NEXT PDE INDEX: %d\n", index);
+    if (DEBUG) printf("Next directory index: %d\n", index);
     set_bit_at_index(dir_map, num_pd_entries, index);
     
-    if (DEBUG) printf("After physical ");
-    if (DEBUG) print_bitmap(phys_map,0);
+    // if (DEBUG) printf("After physical ");
+    // if (DEBUG) print_bitmap(phys_map,0);
 
     
-    if (DEBUG) printf("After directory ");
-    if (DEBUG) print_bitmap(dir_map,0);
+    // if (DEBUG) printf("After directory ");
+    // if (DEBUG) print_bitmap(dir_map,0);
 
     page = get_addr(start);
-    if (DEBUG) printf("Start Address of Allocated Page(s): %p\n", page);
+    if (DEBUG) printf("Physical address of page table: %p\n", page);
     entries[index] = (int) page;
     //if (DEBUG) printf("END PAGE TABLE ALLOCATION\n");
+    if (DEBUG) printf("DONE ALLOCATING SPACE FOR PAGE TABLE\n");
     return page;
     
 }
@@ -848,27 +922,22 @@ unsigned long long create_virt_addr(){
                     //  Translate this back by -1 when break down a VA
                     int dir_index = i + 1;
                     int tab_index = k + 1;
-                    //printf("dir_index: %d -- tab_index: %d\n", dir_index, tab_index);
-                    // printf("Result before: %llx\n", result);
+
                     int bit;
+
                     
-                    // printf("Start = %d\n", start);
-                    
-                    printf("Virtual address (flipped): ");
 
                     //Loop to set offset bits to 0
                     for(i = 0; i < num_offset_bits; i++){
-                        if (DEBUG) printf("%d", 0);
+
                         free_bit_at_index((char*) &result, sizeof(unsigned long long)*8, i);
                     }
 
                     start = start+i; //Save the last position
-                    // printf("\nStart = %d\n", start);
-                    if (DEBUG) printf(" ");
+
                     //Loop to get middle bits table index
                     for(i = 0; i < num_table_bits; i++){
                         bit = get_bit_at_index((char*) &tab_index, num_table_bits, i);
-                        if (DEBUG) printf("%d", bit);
                         if(bit == 1){
                             set_bit_at_index((char*) &result, sizeof(unsigned long long)*8, start+i);
                         }
@@ -876,16 +945,16 @@ unsigned long long create_virt_addr(){
 
                     start = start+i;
                     // printf("\nStart = %d\n", start);
-                    if (DEBUG) printf(" ");
+
                     //Loop to get bits for higher bits from dir index
                     for(i = 0; i < num_dir_bits; i++){
                         bit = get_bit_at_index((char*) &dir_index, num_dir_bits, i);
-                        if (DEBUG) printf("%d", bit);
+
                         if(bit == 1){
                             set_bit_at_index((char*) &result, sizeof(unsigned long long)*8, start+i);
                         }
                     }
-                    if (DEBUG) printf("\n");
+
                     //printf("Result: ");
                     //print_bitmap((char*) &result, 0);
                     //if (DEBUG) printf("Result VA: %llx\n", result);
@@ -906,6 +975,40 @@ unsigned long long create_virt_addr(){
 
     if (DEBUG) printf("No memory currently available. . .\n ");
     return 0;
+}
+
+unsigned long long create_va_from_bits(int top, int mid, int offset) {
+    unsigned long long result = 0;
+
+    int pos = 0;
+    int bit;
+    int i;
+    int start = 0;
+
+    // Set offset bits to 0
+    for(i = 0; i < num_offset_bits; i++){
+        free_bit_at_index((char*) &result, sizeof(unsigned long long)*8, i);
+    }
+    
+    // Set middle bits
+    start = start + i;
+    for(i = 0; i < num_table_bits; i++){
+        bit = get_bit_at_index((char*) &mid, num_table_bits, i);
+        if(bit == 1){
+            set_bit_at_index((char*) &result, sizeof(unsigned long long)*8, start+i);
+        }
+    }
+
+    // Set top bits
+    start = start + i;
+    for(i = 0; i < num_dir_bits; i++){
+        bit = get_bit_at_index((char*) &top, num_dir_bits, i);
+        if(bit == 1){
+            set_bit_at_index((char*) &result, sizeof(unsigned long long)*8, start+i);
+        }
+    }
+
+    return result;
 }
 
 // HW3 functions

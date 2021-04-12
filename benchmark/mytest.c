@@ -12,46 +12,70 @@ int main(int argc, char **argv){
     // int val = 0b11010111;
     // printf("%s\n", print_arbitrary_bits(&val, 8));
 
-    int arr_size = 400;
-    printf("\n -------- ALLOCATING a -------- \n");
-    int *a = a_malloc(arr_size);
-    int old_a = (int)a;
-    printf("\n -------- ALLOCATING b -------- \n");
-    void *b = a_malloc(arr_size);
-    printf("\n -------- ALLOCATING c -------- \n");
-    void *c = a_malloc(arr_size);
+    int test0 = 0; // Passed
+    int test1 = 0; // Not passed
+    int test2 = 0; // Not passed
+    int test3 = 0; // Passed, but strange behavior
+    int test4 = 0; // Passed
 
-    printf("Virtual addresses of the allocations: 0x%lx, 0x%lx, 0x%lx\n", (unsigned long int)a, (unsigned long int)b, (unsigned long int)c);
+    // Allocating three one-page blocks
+    if (test0) {
+        printf("-------- ALLOCATING a -------- \n\n");
+        void *tmp = a_malloc(1);
+        unsigned long int a = *(unsigned long int*)tmp;
+        printf("-------- ALLOCATING b -------- \n\n");
+        tmp = a_malloc(1);
+        unsigned long int b = *(unsigned long int*)tmp;
+        printf("-------- ALLOCATING c -------- \n\n");
+        tmp = a_malloc(1);
+        unsigned long int c = *(unsigned long int*)tmp;
 
-    // Testing translate():
-    // Called
-    
+        printf("Virtual addresses of the allocations: 0x%lx, 0x%lx, 0x%lx\n", a, b, c);
+    }
 
-    // Testing translate()
-    // Nothing here yet
+    // Allocating a large number of one-page blocks
+    if (test1) {
+        int num_malloc_calls = 7;
+        int i = 0;
+        while (i < num_malloc_calls) {
+            void *tmp = a_malloc(1);
+            i += 1;
+        }
+    }
 
-    // Testing page_map()
-    // Nothing here yet
+    // Putting an array of ints into a one-page block
+    if (test2) {
+        int arr_size = 10;
+        int *tmp = a_malloc(arr_size * sizeof(int));
 
-    // //Integer Test
-    // int x = 4;
-    // int* int_ptr = &x;
-    // char* dest = put_in_phys((void*) int_ptr, 0, sizeof(x));
-    // printf("%d\n", (int)*dest);
+        for (int i = 0; i < arr_size; i++) {
+            tmp[i] = i + 1;
+        }
 
-    // //String Test
-    // char* str = "Hello World!";
-    // dest = put_in_phys((void*) str, 10, strlen(str));
-    // printf("%s\n", dest);
+        for (int i = 0; i < arr_size; i++) {
+            printf("Index %d: %d\n", i, arr_size);
+        }
+    }
 
-    //page_dir* ptr;
-    //page_dir_init();
+    // Putting one int into a one-page block
+    if (test3) {
+        int *tmp = a_malloc(sizeof(int));
+        printf("Initial value of memory: %d\n", *tmp); // Appears to contain junk value
+        *tmp = 10;
+        printf("New value of memory: %d\n", *tmp);
+    }
 
-
-    //----- TEST FOR a_malloc() -----
-    //a_malloc(16000);
-
-    //----- END TEST FOR a_malloc() -----
+    // Putting one int into a one-page block, then changing it twice
+    if (test4) {
+        int *tmp = a_malloc(sizeof(int));
+        printf("Initial value of memory: %d\n", *tmp); // Appears to contain junk value
+        *tmp = 10;
+        printf("New value of memory: %d\n", *tmp);
+        *tmp = 100;
+        printf("New value of memory: %d\n", *tmp);
+        *tmp = 1000;
+        printf("New value of memory: %d\n", *tmp);
+    }
 
     return 0;
 }

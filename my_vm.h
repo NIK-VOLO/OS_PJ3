@@ -80,6 +80,7 @@ void print_TLB_missrate();
 void page_table_init();
 void page_dir_init();
 unsigned long long create_virt_addr();
+unsigned long long create_va_from_bits(int top, int mid, int offset);
 char* put_in_phys(void* val, int offset, int size);
 // Function from HW3
 static unsigned int get_top_bits(unsigned int value,  int num_bits);
