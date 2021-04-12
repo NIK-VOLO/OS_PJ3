@@ -14,9 +14,9 @@ int main(int argc, char **argv){
 
     int test0 = 0; // Passed
     int test1 = 0; // Not passed
-    int test2 = 0; // Not passed
-    int test3 = 0; // Passed, but strange behavior
-    int test4 = 0; // Passed
+    int test2 = 1; // Not passed
+    int test3 = 0; // 
+    int test4 = 0; // 
 
     // Allocating three one-page blocks
     if (test0) {
@@ -45,24 +45,45 @@ int main(int argc, char **argv){
 
     // Putting an array of ints into a one-page block
     if (test2) {
-        int arr_size = 10;
+        int arr_size = 2;
         int *tmp = a_malloc(arr_size * sizeof(int));
 
+        int val[arr_size];
         for (int i = 0; i < arr_size; i++) {
-            tmp[i] = i + 1;
+            val[i] = i + 1;
         }
 
+        printf("Putting value into virtual address.\n");
+        put_value(tmp, val, arr_size*sizeof(int));
+
+        printf("Expected: ");
         for (int i = 0; i < arr_size; i++) {
-            printf("Index %d: %d\n", i, arr_size);
+            printf("%d ", val[i]);
         }
+        printf("\n");
+
+        int print_arr[arr_size];
+        get_value(tmp, print_arr, arr_size*sizeof(int));
+
+        printf("Actual: ");
+        for (int i = 0; i < arr_size; i++) {
+            printf("%d ", print_arr[i]);
+        }
+        printf("\n");
     }
 
     // Putting one int into a one-page block
     if (test3) {
         int *tmp = a_malloc(sizeof(int));
-        printf("Initial value of memory: %d\n", *tmp); // Appears to contain junk value
-        *tmp = 10;
-        printf("New value of memory: %d\n", *tmp);
+
+        int *val;
+        get_value(tmp, val, sizeof(int));
+        printf("Initial value of memory: %d\n", *val); 
+        int new_val = 10;
+        *val = new_val;
+        put_value(tmp, val, sizeof(int));
+        get_value(tmp, val, sizeof(int));
+        printf("New value of memory: %d\n", *val);
     }
 
     // Putting one int into a one-page block, then changing it twice

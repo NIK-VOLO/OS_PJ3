@@ -34,6 +34,9 @@ int num_dir_entries;
 
 int num_pd_entries;
 
+int num_tlb_bits;
+tlb* tlb_store;
+
 char** table_maps;
 
 /*
@@ -61,6 +64,15 @@ void set_physical_mem() {
     num_dir_bits = (int) floor((ADDR_BITS - num_offset_bits)/2);
     num_table_bits = ADDR_BITS - (num_dir_bits+num_offset_bits);
     if (DEBUG) printf("Offset bits: %d\nDirectory bits: %d\nPage Table bits: %d\n", num_offset_bits, num_dir_bits, num_table_bits);
+
+    // Making a tlb
+    int num_tlb_bits = log2(TLB_ENTRIES);
+    tlb_store = malloc(sizeof(tlb));
+    memset(tlb_store, 0, sizeof(tlb));
+    tlb_store->phys = malloc(TLB_ENTRIES * sizeof(pte_t));
+    memset(tlb_store->phys, 0, TLB_ENTRIES * sizeof(pte_t));
+    tlb_store->virt = malloc(TLB_ENTRIES * sizeof(pte_t));
+    memset(tlb_store->virt, 0, TLB_ENTRIES * sizeof(pte_t));
 
     double higher_bits = (double) (ADDR_BITS - num_offset_bits);
 
@@ -113,6 +125,43 @@ pte_t *
 check_TLB(void *va) {
 
     /* Part 2: TLB lookup code here */
+    // TLB index:
+    // (((unsigned int)va)&tlb_bitmask) >> (numOffsetBits)
+
+    unsigned long tlb_index = get_tlb_index(va);
+    unsigned long offset = get_mid_bits(*(unsigned int*)va, num_offset_bits, 0);
+
+    pte_t mapping = tlb_store->phys[tlb_index];
+
+    if (mapping != 0) {
+        
+        if (DEBUG) printf("TLB hit\n");
+
+        // TLB hit
+        pte_t* pa = (pte_t*) tlb_store->phys[tlb_index];
+
+        // Increment TLB hits
+        tlb_store->hits += 1;
+
+        return (pte_t*) pa + offset;
+    }
+    else {
+        
+        if (DEBUG) printf("TLB miss\n");
+
+        // TLB miss
+
+        pte_t *pa = translate(entries, (char*) va + offset);
+        
+        // Update TLB
+        tlb_store->phys[tlb_index] = (pte_t) pa;
+        tlb_store->virt[tlb_index] = (pte_t) va;
+
+        // Increment TLB misses
+        tlb_store->misses += 1;
+
+        return (pte_t*) pa + offset;
+    }
 
 }
 
@@ -128,7 +177,9 @@ print_TLB_missrate()
 
     /*Part 2 Code here to calculate and print the TLB miss rate*/
 
-
+    double hits_double = (double) tlb_store->hits;
+    double misses_double = (double) tlb_store->misses;
+    miss_rate = misses_double / (hits_double + misses_double);
 
 
     fprintf(stderr, "TLB miss rate %lf \n", miss_rate);
@@ -149,36 +200,31 @@ pte_t *translate(pde_t *pgdir, void *va) {
     * translation exists, then you can return physical address from the TLB.
     */
 
+    unsigned int dir_index = get_top_bits(*(unsigned int*)va, num_dir_bits);
+    unsigned int table_index = get_mid_bits(*(unsigned int*)va, num_table_bits, num_offset_bits);
+    unsigned int offset_index = get_mid_bits(*(unsigned int*)va, num_offset_bits, 0);
 
-
-    // Check TLB
-    //TODO: TLB search code
-
-    // TLB miss, decompose virtual address
-    unsigned int pde_index = get_top_bits(*(unsigned int*)va, num_dir_bits);
-    unsigned int pte_index = get_mid_bits(*(unsigned int*)va, num_table_bits, num_offset_bits);
-    unsigned int offset = get_mid_bits(*(unsigned int*)va, num_offset_bits, num_dir_bits + num_table_bits);
-
-    // Go to page table from page directory
-    pde_t pgtable = pgdir[pde_index];
-    if (!pgtable) {
-        //If translation not successfull
-        return NULL; 
+    // Going to PDE
+    pde_t *pde_addr = pgdir + dir_index;
+    // mutex lock here?
+    if (*pde_addr == (pde_t) NULL) {
+        // mutex unlock here?
+        return NULL;
     }
 
-    // Go to physical memory from page table
-    pde_t *pgtable_addr = &pgtable;
-    pte_t virt_page = (pte_t) pgtable_addr[pte_index];
-    if (!virt_page) {
-        //If translation not successfull
-        return NULL; 
+    // Going to page table
+    pte_t *pt_addr = (pte_t*) *pde_addr;
+    // Going to PTE
+    pte_t *pte_addr = pt_addr + table_index;
+    if (*pte_addr == (pde_t) NULL) {
+        // mutex unlock here?
+        return NULL;
     }
-    // Go to physical address from page table entry
-    pte_t *virt_page_addr = &virt_page;
-    pte_t phys_page = virt_page_addr[pte_index + offset];
-    pte_t* phys_mem_with_offset = (pte_t*) phys_page;
-    // Return physical address
-    return phys_mem_with_offset;
+
+    // Going to physical page
+    pte_t *pp_addr = (pte_t*)(*pte_addr + offset_index);
+    // mutex unlock here?
+    return pp_addr;
 }
 
 
@@ -514,64 +560,31 @@ void put_value(void *va, void *val, int size) {
      * function.
      */
 
-    int num_pages_needed = (size / PGSIZE);
-    if (size % PGSIZE > 0) num_pages_needed += 1;
+    char *val_ptr = (char*)val;
 
-    //TODO: Test to see if it's possible to fit this in physical memory
-
-    int num_pages_used = 0;
-    int start = 0;
-    while(num_pages_used < num_pages_needed) {
-        
-        // Constructing a path to a virtual page
-        int top_bits = get_top_bits(*(unsigned int*)va, num_dir_bits);
-        int start_mid_bits = get_mid_bits(*(unsigned int*)va, num_table_bits, num_offset_bits);
-        int cur_mid_bits = start_mid_bits + num_pages_used;
-        unsigned long long virt = create_va_from_bits(top_bits, cur_mid_bits, 0);
-        void* cur_va = (void*) &virt;
-
-        // Going from the virtual page to a physical one
-        pte_t *pa = translate(entries, cur_va);
-
-        // Preparing a chunk of val to put into pa
-        // val_chunk starts as a page-sized bunch of zeroes
-        char* val_chunk = malloc((PGSIZE / sizeof(char)));
-        memset(val_chunk, 0, PGSIZE / sizeof(char));
-
-        if (num_pages_used == (size / PGSIZE) && num_pages_needed > (size / PGSIZE)) {
-            // Need to place in a chunk of less than one page
-            int bit;
-            for (int i = 0; i < size % PGSIZE; i++) {
-                int bit = get_bit_at_index(val, size, start+i);
-                if (bit == 1) {
-                    set_bit_at_index((char*) val_chunk, PGSIZE, i);
-                }
-            }            
-        } else {
-            // Chunk will fill an entire page
-            int bit;
-            for (int i = 0; i < PGSIZE; i++) {
-                int bit = get_bit_at_index(val_chunk, PGSIZE, i);
-                if (bit == 1) {
-                    set_bit_at_index((char*) pa, PGSIZE, i);
-                }
-            }
-        }
-        start += PGSIZE;
-
-        // Put that chunk into physical memory
-        int bit;
-        for (int i = 0; i < PGSIZE; i++) {
-            int bit = get_bit_at_index(val_chunk, PGSIZE, i);
-            if (bit == 1) {
-                set_bit_at_index((char*) pa, PGSIZE, i);
-            }
-        }
-
-        free(val_chunk);
-        num_pages_used += 1;
+    // Does offset matter?
+    // Check to see if space is allocated
+    int space_ok = check_size(va, size);
+    if(space_ok != 0) {
+        return;
     }
-    
+
+    // Check TLB for phys address
+    char *pa = (char*)check_TLB(va);
+    if (pa == NULL) {
+        // Something's wrong with the virtual address
+        if (DEBUG) printf("put_value() error: invalid virtual address.\n");
+        return;
+    }
+
+    int i = 0;
+    // Mutex lock?
+    for (i = 0; i < size; i++) {
+        // Pages will always be contiguous, so you can do this
+        *(pa + i) = *(val_ptr + i);
+    }
+    // Mutex unlock?
+    return;
 }
 
 
@@ -648,10 +661,29 @@ void get_value(void *va, void *val, int size) {
     * "val" address. Assume you can access "val" directly by derefencing them.
     */
 
+    // Does offset matter?
 
+    char* val_ptr = (char*) val;
 
+    // Check if size is ok
+    int too_big = check_size(va, size);
+    if (too_big != 0) {
+        return;
+    }
 
+    pte_t *pa = check_TLB(va);
+    if (pa == NULL) {
+        return;
+    }
 
+    // Mutex lock?
+    char* pa_ptr = (char*) pa;
+    int i = 0;
+    for (i = 0; i < size; i++) {
+        *(val_ptr + i) = *(pa_ptr + i);
+    }
+    // Mutex unlock?
+    return;
 }
 
 
@@ -873,39 +905,7 @@ unsigned long long create_virt_addr(){
     unsigned long long result = 0;
     int start = 0;
 
-    //TESTS 
-    //free_bit_at_index(dir_map, num_pd_entries, 0);
-    //set_bit_at_index(dir_map, num_pd_entries, 1);
-    
-    // int n = 0;
-    // for(n = 0; n < 1024; n++){
-    //     set_bit_at_index((char*)&table_maps[0], num_table_entries, n);
-    // }
-    
-    // print_bitmap((char*)&table_maps[0], 0);
-    // print_bitmap((char*)&table_maps[0], 1);
-    // print_bitmap((char*)&table_maps[0], 2);
-    // print_bitmap((char*)&table_maps[0], 31);
-    // print_bitmap((char*)&table_maps[31], 0);
-    // print_bitmap((char*)&table_maps[0], 32);
-
-    // print_bitmap((char*)&table_maps[1], 2);
-    // print_bitmap((char*)&table_maps[2], 0);
-
-    //set_bit_at_index((char*) &table_maps[1], num_table_entries, 0);
-    //print_bitmap((char*)&table_maps[0]+4, 0);
-    //print_bitmap((char*)&table_maps[1], 0);
-
-    // printf("Table map 0: %p -- %p\n", &table_maps[0], &table_maps[0]+0);
-    // printf("Table map 1: %p -- %p\n", &table_maps[4], &table_maps[0]+4);
-    // printf("Table map 2: %p -- %p\n", &table_maps[8], &table_maps[0]+8);
-    
-    //END TESTS
-
-    //printf("Directory ");
-    //print_bitmap(dir_map, 0);
-    // set_bit_at_index((char*)&table_maps[0], num_table_entries, 0);
-    // print_bitmap((char*)&table_maps[0], 0);
+ 
     for(i = 0; i < num_pd_entries; i++){
         value_dir = get_bit_at_index(dir_map, num_pd_entries, i);
         if(value_dir == 1){ //Found an allocated/available directory slot
@@ -1177,6 +1177,43 @@ int sizeof_bitmap(char* bitmap, int num_chunks){
         
     }
 
+    return 0;
+}
+
+int check_size(void* va, int size) {
+
+    if (va < 0) {
+        if (DEBUG) printf("check_size() error: invalid virtual address.\n");
+        return 1;
+    }
+    
+    int num_pages = size / PGSIZE;
+    if (size % PGSIZE != 0) num_pages += 1;
+
+    unsigned int top_bits = get_top_bits(*(unsigned int*)va, num_dir_bits);
+    unsigned int mid_bits = get_mid_bits(*(unsigned int*)va, num_table_bits, num_offset_bits);
+    unsigned int offset_index = get_mid_bits(*(unsigned int*)va, num_offset_bits, 0);
+    top_bits--;
+    mid_bits--;
+
+    int index = 0;
+    int value_table;
+    while (index < num_pages) {
+        value_table = get_bit_at_index((char*)&table_maps[top_bits*32], num_table_entries, mid_bits + index);
+        if (value_table == 0) {
+            // Not allocated
+            if (DEBUG) printf("check_size() error: not entirely allocated.\n");
+            return 2;
+        }
+        index += 1;
+    }
+
+    // All good
+    return 0;
+}
+
+unsigned long get_tlb_index(void* va) {
+    //TODO
     return 0;
 }
 

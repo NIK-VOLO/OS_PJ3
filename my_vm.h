@@ -29,6 +29,9 @@ typedef unsigned long pte_t;
 // Represents a page directory entry
 typedef unsigned long pde_t;
 
+// Represents a TLB entry
+typedef struct tlb tlb;
+
 #define TLB_ENTRIES 512
 
 #define ADDR_BITS 32
@@ -39,7 +42,7 @@ typedef unsigned long pde_t;
 
 //Structure to store information for every tlb entry. 
 struct tlb_entry {
-    
+    // Cumbersome to use
 };
 
 //Structure to represents TLB
@@ -48,9 +51,11 @@ struct tlb {
     * Think about the size of each TLB entry that performs virtual to physical
     * address translation.
     */
-
+   pte_t* phys;
+   pte_t* virt;
+   int hits;
+   int misses;
 };
-struct tlb tlb_store;
 
 //Struct for Page table
 typedef struct page_table_t{
@@ -90,5 +95,7 @@ static int get_bit_at_index(char *bitmap, int num_entries, int index);
 static void free_bit_at_index(char *bitmap, int num_entries, int index);
 void print_bitmap(char* bitmap, int chunk);
 char* print_arbitrary_bits(void* location, int num_bits);
+int check_size(void* va, int size);
+unsigned long get_tlb_index(void* va);
 
 #endif
