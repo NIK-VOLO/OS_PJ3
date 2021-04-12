@@ -297,8 +297,11 @@ int page_map(pde_t *pgdir, void *va, void *pa)
     and page table (2nd-level) indices. If no mapping exists, set the
     virtual to physical mapping */
 
-    int top_bits;
-    int mid_bits;
+    int* top_bits = (int*) malloc(sizeof(int*));
+    int* mid_bits = (int*) malloc(sizeof(int*));
+    //pde_t pt_addr = (pde_t) malloc(sizeof(pde_t));
+    //pde_t* page_table = (pde_t*) malloc(sizeof(pde_t*));
+    //pte_t page_addr = (pte_t*) malloc(sizeof(pte_t*));
 
     if(entries == NULL){
         if (DEBUG) printf("ERROR: PAGE DIRECTORY NOT INITIALIZED\n");
@@ -308,35 +311,40 @@ int page_map(pde_t *pgdir, void *va, void *pa)
     if (DEBUG) printf("SETTING PAGE TABLE ENTRY\n");
     
     // Convert top bits to an index for Directory
-    top_bits = get_top_bits(*(unsigned int*)va, num_dir_bits);
-    mid_bits = get_mid_bits(*(unsigned int*)va, num_table_bits, num_offset_bits);
+    //unsigned long dummy_va = *(unsigned long*)va;
+    *top_bits = get_top_bits(*(unsigned int*)va, num_dir_bits);
+    //dummy_va = *(unsigned long*)va;
+    *mid_bits = get_mid_bits(*(unsigned int*)va, num_table_bits, num_offset_bits);
 
     // Decrement these indexes (because they are incremented when creating virtual address)
     // PET: I don't fully understand this
-    top_bits--;
-    mid_bits--;
+    *top_bits--;
+    *mid_bits--;
 
     // Get page table address
-    pde_t pt_addr = pgdir[top_bits];
+    pde_t pt_addr = pgdir[*top_bits];
 
     // Check if directory contains page table at index
-    int value_dir = get_bit_at_index(dir_map, num_dir_entries, top_bits);
+    int value_dir = get_bit_at_index(dir_map, num_dir_entries, *top_bits);
     if (value_dir) {
 
         // Page table already exists
-        if (DEBUG) printf("Attempting to place PTE in PDE %d of %d.\n", top_bits+1, num_dir_entries);
+        if (DEBUG) printf("Attempting to place PTE in PDE %d of %d.\n", *top_bits+1, num_dir_entries);
 
         // Get page table and physical page address
         pde_t* page_table = &pt_addr;
-        pte_t page_addr = page_table[mid_bits];
+        pte_t page_addr = page_table[*mid_bits];
 
         // Check if page table contains entry at index
-        int num_table_entries = scalbn(1, num_table_bits);
-        int value_table = get_bit_at_index((char*)&table_maps[top_bits*32], num_table_entries, mid_bits);
+        //int num_table_entries = scalbn(1, num_table_bits);
+        int value_table = get_bit_at_index((char*)&table_maps[*top_bits*32], num_table_entries, *mid_bits);
         if (value_table) {
 
             // PTE already exists
             if (DEBUG) printf("Physical page mapping already exists in page table. No action.\n");
+
+            free(top_bits);
+            free(mid_bits);
 
             return PGMAP_NOACTION;
         }
@@ -344,21 +352,30 @@ int page_map(pde_t *pgdir, void *va, void *pa)
         // Page table exists but PTE does not        
         // Mapping PTE to physical page
 
-        page_table[mid_bits] = (pte_t) pa;
-        if(DEBUG) printf("page_map(): Physical Address: %lx\n", page_table[mid_bits]);
-        if (DEBUG) printf("Mapping Physical address 0x%lx to PTE %d of %d.\n", (unsigned long int) pa, mid_bits+1, num_table_entries);
+        page_table[*mid_bits] = (pte_t) pa;
+        if(DEBUG) printf("page_map(): Physical Address: %lx\n", page_table[*mid_bits]);
+        if (DEBUG) printf("Mapping Physical address 0x%lx to PTE %d of %d.\n", (unsigned long int) pa, *mid_bits+1, num_table_entries);
 
         // Setting table bitmap
-        char* table_start = (char*)&table_maps[top_bits*32];
-        char* mb_str = print_arbitrary_bits(&mid_bits, 10);
-        char* tb_str = print_arbitrary_bits(&top_bits, 10);
-        set_bit_at_index((char*)&table_maps[top_bits*32], num_table_entries, mid_bits);
+        char* table_start = (char*)&table_maps[*top_bits*32];
+        //char* mb_str = print_arbitrary_bits(&mid_bits, 10);
+        //char* tb_str = print_arbitrary_bits(&top_bits, 10);
+        if(DEBUG) printf("page_map(): top bits (index) before setting: %d\n", *top_bits);
+        set_bit_at_index((char*)&table_maps[*top_bits*32], num_table_entries, *mid_bits);
+
+        if(DEBUG) print_bitmap((char*)&table_maps[0*32],0);
 
         // Setting physical bitmap
-        int bit_to_set = ((char*)pa - phys) / PGSIZE;
+        // int bit_to_set = ((char*)pa - phys) / PGSIZE;
+        unsigned long x = (unsigned long) pa;
+        int bit_to_set = (x - (unsigned long) phys) / PGSIZE;
         set_bit_at_index(phys_map, num_table_entries, bit_to_set);
 
         if (DEBUG) printf("DONE SETTING PAGE TABLE ENTRY\n");
+
+        free(top_bits);
+        free(mid_bits);
+
         return PGMAP_NEWPTE;
     }
 
@@ -370,6 +387,9 @@ int page_map(pde_t *pgdir, void *va, void *pa)
         // No space for a new page table
         if (DEBUG) printf("No space for a new page table. No action.\n");
 
+        free(top_bits);
+        free(mid_bits);
+
         return PGMAP_NOACTION;
     }
 
@@ -377,9 +397,17 @@ int page_map(pde_t *pgdir, void *va, void *pa)
     pte_t* temp = (pte_t*) new_pt;
     
     // Mapping PTE to physical page
-    temp[mid_bits] = (pte_t) &pa;
+    temp[*mid_bits] = (pte_t) &pa;
 
     if (DEBUG) printf("DONE SETTING PAGE TABLE ENTRY (WITH NEW PAGE TABLE)\n");
+
+
+    free(top_bits);
+    free(mid_bits);
+    //free(pt_addr);
+    //free(page_table);
+    //free(page_addr);
+
     return PGMAP_NEWTABLEANDPTE;
 }
 
@@ -595,7 +623,9 @@ void a_free(void *va, int size) {
 
         // Clear physical bitmap
         pte_t *pa = translate(entries, va);
-        int bit_to_set = ((char*)pa - phys) / PGSIZE;
+        // int bit_to_set = ((char*)pa - phys) / PGSIZE;
+        unsigned long x = (unsigned long) pa;
+        int bit_to_set = (x - (unsigned long) phys) / PGSIZE;
         free_bit_at_index(phys_map, num_table_entries, bit_to_set);
 
         // Clear dir bitmap if PDE now empty

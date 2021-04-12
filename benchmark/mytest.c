@@ -14,8 +14,8 @@ int main(int argc, char **argv){
     // printf("%s\n", print_arbitrary_bits(&val, 8));
 
     int test0 = 0; // Passed
-    int test1 = 0; // Not passed
-    int test2 = 1; // Not passed
+    int test1 = 1; // Not passed
+    int test2 = 0; // Not passed
     int test3 = 0; // 
     int test4 = 0; // 
 
@@ -36,7 +36,7 @@ int main(int argc, char **argv){
 
     // Allocating a large number of one-page blocks
     if (test1) {
-        int num_malloc_calls = 7;
+        int num_malloc_calls = 20;
         int i = 0;
         while (i < num_malloc_calls) {
             void *tmp = a_malloc(1);
