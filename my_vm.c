@@ -32,8 +32,6 @@ int num_table_bits;
 int num_table_entries;
 int num_dir_entries;
 
-int num_pd_entries;
-
 int num_tlb_bits;
 tlb* tlb_store;
 
@@ -65,7 +63,7 @@ void set_physical_mem() {
     num_table_bits = ADDR_BITS - (num_dir_bits+num_offset_bits);
     if (DEBUG) printf("Offset bits: %d\nDirectory bits: %d\nPage Table bits: %d\n", num_offset_bits, num_dir_bits, num_table_bits);
 
-    // Making a tlb
+    // Initialize TLB
     int num_tlb_bits = log2(TLB_ENTRIES);
     tlb_store = malloc(sizeof(tlb));
     memset(tlb_store, 0, sizeof(tlb));
@@ -89,7 +87,7 @@ void set_physical_mem() {
     //phys_map = (char*) malloc(4); // For now allocating 32 bits for bit map, even though physical space is 20 bits
     phys_map = (char*) malloc(size_of_bitmap);
     memset(phys_map,0, size_of_bitmap);
-    set_bit_at_index(phys_map, num_phys_pages,39);
+    set_bit_at_index(phys_map, num_phys_pages,39); // PET: Why?
 
     num_table_entries = scalbn(1, num_table_bits);
     num_dir_entries = scalbn(1, num_dir_bits);
@@ -112,7 +110,22 @@ add_TLB(void *va, void *pa)
 
     /*Part 2 HINT: Add a virtual to physical page translation to the TLB */
 
-    return -1;
+    unsigned long tlb_index = get_tlb_index(va);
+
+    //evict
+    if (tlb_store->phys[tlb_index] != 0) {
+        if (DEBUG) printf("Evicting TLB mapping: ");
+        if (DEBUG) printf("virtual 0x%lx to ", (unsigned long int) tlb_store->phys[tlb_index]);
+        if (DEBUG) printf("phys 0x%lx\n", (unsigned long int) tlb_store->virt[tlb_index]);
+    }
+
+    if (DEBUG) printf("Adding TLB mapping: ");
+    tlb_store->phys[tlb_index] = (pte_t) pa;
+    tlb_store->virt[tlb_index] = (pte_t) va;
+    if (DEBUG) printf("virt 0x%lx to ", (unsigned long int) va);
+    if (DEBUG) printf("phys 0x%lx\n", (unsigned long int) pa);
+
+    return 0;
 }
 
 
@@ -154,8 +167,7 @@ check_TLB(void *va) {
         pte_t *pa = translate(entries, (char*) va + offset);
         
         // Update TLB
-        tlb_store->phys[tlb_index] = (pte_t) pa;
-        tlb_store->virt[tlb_index] = (pte_t) va;
+        add_TLB(va, pa);
 
         // Increment TLB misses
         tlb_store->misses += 1;
@@ -200,12 +212,12 @@ pte_t *translate(pde_t *pgdir, void *va) {
     * translation exists, then you can return physical address from the TLB.
     */
 
-    unsigned int dir_index = get_top_bits(*(unsigned int*)va, num_dir_bits);
-    unsigned int table_index = get_mid_bits(*(unsigned int*)va, num_table_bits, num_offset_bits);
-    unsigned int offset_index = get_mid_bits(*(unsigned int*)va, num_offset_bits, 0);
+    unsigned int top = get_top_bits(*(unsigned int*)va, num_dir_bits);
+    unsigned int mid = get_mid_bits(*(unsigned int*)va, num_table_bits, num_offset_bits);
+    unsigned int offset = get_mid_bits(*(unsigned int*)va, num_offset_bits, 0);
 
     // Going to PDE
-    pde_t *pde_addr = pgdir + dir_index;
+    pde_t *pde_addr = pgdir + top;
     // mutex lock here?
     if (*pde_addr == (pde_t) NULL) {
         // mutex unlock here?
@@ -215,14 +227,14 @@ pte_t *translate(pde_t *pgdir, void *va) {
     // Going to page table
     pte_t *pt_addr = (pte_t*) *pde_addr;
     // Going to PTE
-    pte_t *pte_addr = pt_addr + table_index;
+    pte_t *pte_addr = pt_addr + mid;
     if (*pte_addr == (pde_t) NULL) {
         // mutex unlock here?
         return NULL;
     }
 
     // Going to physical page
-    pte_t *pp_addr = (pte_t*)(*pte_addr + offset_index);
+    pte_t *pp_addr = (pte_t*)(*pte_addr + offset);
     // mutex unlock here?
     return pp_addr;
 }
@@ -263,11 +275,11 @@ int page_map(pde_t *pgdir, void *va, void *pa)
     pde_t pt_addr = pgdir[top_bits];
 
     // Check if directory contains page table at index
-    int value_dir = get_bit_at_index(dir_map, num_pd_entries, top_bits);
+    int value_dir = get_bit_at_index(dir_map, num_dir_entries, top_bits);
     if (value_dir) {
 
         // Page table already exists
-        if (DEBUG) printf("Attempting to place PTE in PDE %d of %d.\n", top_bits+1, num_pd_entries);
+        if (DEBUG) printf("Attempting to place PTE in PDE %d of %d.\n", top_bits+1, num_dir_entries);
 
         // Get page table and physical page address
         pde_t* page_table = &pt_addr;
@@ -373,7 +385,7 @@ int get_next_pde(int open) {
     
     void* address;
     int i = 0;
-    int value = get_bit_at_index(dir_map, num_pd_entries, i);
+    int value = get_bit_at_index(dir_map, num_dir_entries, i);
     //printf("Bit: %d at index: %d\n", value, i);
     if(value == open){
         //if (DEBUG) printf("(1) OPEN INDEX: %d Value: %d\n", i, value);
@@ -385,9 +397,9 @@ int get_next_pde(int open) {
         //return address;
     }
     
-    while(value == !open && i < num_pd_entries){
+    while(value == !open && i < num_dir_entries){
         i++;
-        value = get_bit_at_index(dir_map, num_pd_entries, i);
+        value = get_bit_at_index(dir_map, num_dir_entries, i);
         //printf("Bit: %d at index: %d\n", value, i);
         if(value == open){
             //if (DEBUG) printf("(2) OPEN INDEX: %d Value: %d\n", i, value);
@@ -540,7 +552,7 @@ void a_free(void *va, int size) {
             if (value) pde_empty = 0;
         }
         if (pde_empty) {
-            free_bit_at_index(dir_map, num_pd_entries, top_bits);
+            free_bit_at_index(dir_map, num_dir_entries, top_bits);
         }
 
         num_pages_freed += 1;
@@ -732,12 +744,12 @@ void page_dir_init(){
     //NOTE: 
     //  NEED TO ADD CHECKS TO SEE IF THE DIR SHOULD SPAN MULTIPLE PAGES (POSSIBLE)
     // if (DEBUG) printf("Size of pde_t: %d Bytes\n", sizeof(pde_t));
-    num_pd_entries = scalbn(1, num_dir_bits);
-    // if (DEBUG) printf("Number of entries in directory: %d\n", num_pd_entries);
-    dir_map = (char*) malloc(num_pd_entries/8);
-    memset(dir_map, 0, (num_pd_entries/8));
-    // if (DEBUG) printf("Size of DIRECTORY Bitmap: %d\n", (num_pd_entries/8));
-    int dir_size = num_pd_entries * sizeof(pde_t);
+    num_dir_entries = scalbn(1, num_dir_bits);
+    // if (DEBUG) printf("Number of entries in directory: %d\n", num_dir_entries);
+    dir_map = (char*) malloc(num_dir_entries/8);
+    memset(dir_map, 0, (num_dir_entries/8));
+    // if (DEBUG) printf("Size of DIRECTORY Bitmap: %d\n", (num_dir_entries/8));
+    int dir_size = num_dir_entries * sizeof(pde_t);
     // if (DEBUG) printf("Total Size of directory: %d\n", dir_size);
     int num_pages_needed = dir_size/PGSIZE + ((dir_size % PGSIZE) != 0);
     // if (DEBUG) printf("Number of pages needed to store directory: %d\n", num_pages_needed);
@@ -774,7 +786,7 @@ void page_dir_init(){
     // ----- END TEST FOR get_next_avail() ------
 
     // ----- TEST FOR create_dir_entry() ------
-    //set_bit_at_index(dir_map, num_pd_entries, 0);
+    //set_bit_at_index(dir_map, num_dir_entries, 0);
     if (DEBUG) printf("Creating first page table. \n");
     create_dir_entry();
     // create_dir_entry();
@@ -862,7 +874,7 @@ void* create_dir_entry(){
 
     //Set bit in the Directory Map 
     if (DEBUG) printf("Next directory index: %d\n", index);
-    set_bit_at_index(dir_map, num_pd_entries, index);
+    set_bit_at_index(dir_map, num_dir_entries, index);
     
     // if (DEBUG) printf("After physical ");
     // if (DEBUG) print_bitmap(phys_map,0);
@@ -889,7 +901,7 @@ unsigned long long create_virt_addr(){
     //  Find available page table slot (using array of bitmaps storing bitmaps for each table)
     //      Offset bits will all be 0 because we will always be mapping to the start of a page
 
-    //set_bit_at_index(dir_map, num_pd_entries, 0);
+    //set_bit_at_index(dir_map, num_dir_entries, 0);
     // print_bitmap(dir_map,0);
     // int pde_slot = get_next_pde(1); //Finds the first index where the dirmap is set to 1
     // printf("Index of next availabe pde: %d\n", pde_slot);
@@ -906,8 +918,8 @@ unsigned long long create_virt_addr(){
     int start = 0;
 
  
-    for(i = 0; i < num_pd_entries; i++){
-        value_dir = get_bit_at_index(dir_map, num_pd_entries, i);
+    for(i = 0; i < num_dir_entries; i++){
+        value_dir = get_bit_at_index(dir_map, num_dir_entries, i);
         if(value_dir == 1){ //Found an allocated/available directory slot
             for(k = 0; k < num_table_entries; k++){
                 //Find the first UNallocated slot in the table
@@ -1213,7 +1225,9 @@ int check_size(void* va, int size) {
 }
 
 unsigned long get_tlb_index(void* va) {
-    //TODO
+    
+    unsigned long result = get_mid_bits(*(unsigned int*)va, num_tlb_bits, num_offset_bits);
+
     return 0;
 }
 
