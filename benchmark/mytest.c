@@ -2,6 +2,7 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <math.h>
+#include <pthread.h>
 #include "../my_vm.h"
 
 #define SIZE 5
@@ -46,15 +47,17 @@ int main(int argc, char **argv){
     // Putting an array of ints into a one-page block
     if (test2) {
         int arr_size = 2;
-        int *tmp = a_malloc(arr_size * sizeof(int));
+        void *tmp = a_malloc(arr_size * sizeof(int));
+        
 
         int val[arr_size];
         for (int i = 0; i < arr_size; i++) {
             val[i] = i + 1;
         }
-
+        unsigned long tmp_va = *(unsigned long int*)tmp;
+        printf("a_malloc returned VA: %lx\n", *(unsigned long int*)tmp);
         printf("Putting value into virtual address.\n");
-        put_value(tmp, val, arr_size*sizeof(int));
+        put_value((void*)&tmp_va, val, arr_size*sizeof(int));
 
         printf("Expected: ");
         for (int i = 0; i < arr_size; i++) {

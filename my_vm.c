@@ -130,7 +130,7 @@ add_TLB(void *va, void *pa)
     if (DEBUG) printf("Adding TLB mapping: ");
     tlb_store->phys[tlb_index] = (pte_t) pa;
     tlb_store->virt[tlb_index] = (pte_t) va;
-    if (DEBUG) printf("virt 0x%lx to ", (unsigned long int) va);
+    if (DEBUG) printf("virt 0x%lx to ", *(unsigned long int*) va);
     if (DEBUG) printf("phys 0x%lx\n", (unsigned long int) pa);
 
     return 0;
@@ -586,6 +586,7 @@ void put_value(void *va, void *val, int size) {
      * function.
      */
 
+    printf("put_value(): Parameter VA: %lx\n", *(unsigned long int*)va);
     char *val_ptr = (char*)val;
 
     // Does offset matter?
@@ -1265,6 +1266,7 @@ int check_size(void* va, int size) {
         }
         index += 1;
     }
+    
 
     // All good
     return 0;
