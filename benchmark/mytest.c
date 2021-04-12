@@ -8,13 +8,17 @@
 #define ARRAY_SIZE 400
 
 int main(int argc, char **argv){
+
+    // int val = 0b11010111;
+    // printf("%s\n", print_arbitrary_bits(&val, 8));
+
     int arr_size = 400;
-    printf("\n ALLOCATING a \n");
+    printf("\n -------- ALLOCATING a -------- \n");
     int *a = a_malloc(arr_size);
     int old_a = (int)a;
-    printf("\n ALLOCATING b \n");
+    printf("\n -------- ALLOCATING b -------- \n");
     void *b = a_malloc(arr_size);
-    printf("\n ALLOCATING c \n");
+    printf("\n -------- ALLOCATING c -------- \n");
     void *c = a_malloc(arr_size);
 
     printf("Addresses of the allocations: %x, %x, %x\n", (int)a, (int)b, (int)c); // Segfault here

@@ -219,21 +219,17 @@ int page_map(pde_t *pgdir, void *va, void *pa)
     top_bits--;
     mid_bits--;
 
-    
-
-    pde_t pt_no_exist = 0;
-    if (DEBUG) printf("TOP BITS: ");
-    print_arbitrary_bits(&top_bits, num_dir_bits);
+    if (DEBUG) printf("TOP BITS: %s\n", print_arbitrary_bits(&top_bits, num_dir_bits));
     pde_t pt_addr = pgdir[top_bits];
     if (DEBUG) printf("Page table address %lx\n", pt_addr);
     int value_dir = get_bit_at_index(dir_map, num_pd_entries, top_bits);
-    if(DEBUG) printf("Current dir bitmap: %d\n", value_dir);
+    // if(DEBUG) printf("Current dir bitmap: %d\n", value_dir);
     if (value_dir) {
         // Page mapping already exists
+        if (DEBUG) printf("Directory mapping exists. Attempting to place page in extant table.\n");
         //pte_t* mem = pt[mid_bits];
         pte_t page_no_exist = 0;
-        if (DEBUG) printf("MID BITS: ");
-        print_arbitrary_bits(&mid_bits, num_table_bits);
+        if (DEBUG) printf("MID BITS: %s\n", print_arbitrary_bits(&mid_bits, num_table_bits));
         pde_t* page_table = &pt_addr;
         pte_t page_addr = page_table[mid_bits];
         if (DEBUG) printf("Page address %lx\n", page_addr);
@@ -245,10 +241,10 @@ int page_map(pde_t *pgdir, void *va, void *pa)
         // printf("\n");
         int value_table = get_bit_at_index((char*)&table_maps[top_bits*32], num_table_entries, mid_bits);
         // printf("part 4\n");
-        if(DEBUG) printf("Current table bitmap: %d\n", value_table);
+        //if(DEBUG) printf("Bitmap: %d\n", value_table);
         if (value_table) {
             // Page mapping exists with valid page table entry 
-            if (DEBUG) printf("Page mapping already exists.\n");
+            if (DEBUG) printf("Page mapping already exists. Nothing to do.\n");
             return 0;
         }
         // Page mapping exists but page table entry does not
@@ -261,22 +257,27 @@ int page_map(pde_t *pgdir, void *va, void *pa)
         // printf("Getting associated bitmap\n");
         // printf("top bits: %d\n", top_bits);
         // print_bitmap((char*)&table_maps[0], 0);
-        char* assoc_bitmap = table_maps[top_bits*32]; // 32 might need to change
+        char* assoc_bitmap = table_maps[top_bits*num_table_entries];
+        if (DEBUG) printf("Bitmap associated with table: %s\n", print_arbitrary_bits(assoc_bitmap, num_table_entries));
         // printf("seggy?\n");
-        printf("Associated ");
-        print_bitmap(assoc_bitmap, 0); // Segfault here
+        // print_arbitrary_bits(assoc_bitmap, 1);
+        // printf("Associated ");
+        // print_bitmap(assoc_bitmap, 0); // Segfault here
         // Segfault happens at get_bit_at_index(bitmap, bits_for_map*(chunk+1), k+(index*8)));
         // Maybe something wrong with table_maps[top_bits*32]?
-        set_bitmap(assoc_bitmap, 1, 1, scalbn(1, num_table_bits));
-
+        set_bit_at_index(assoc_bitmap, 1, mid_bits);
+        
         if (DEBUG) printf("After physical ");
         if (DEBUG) print_bitmap(phys_map, 0);
 
         return 1;
     }
     // Page table does not exist, create a new one
-    printf("Need to make a new page table.\n");
+    printf("Directory mapping not found. Need to make a new page table.\n");
     void* new_pt = create_dir_entry();
+    if (new_pt == NULL) {
+        return 3;
+    }
     pte_t* temp = (pte_t*) new_pt;
     //new_pt[mid_bits] = pa;
     temp[mid_bits] = (pte_t) &pa;
@@ -368,6 +369,8 @@ and used by the benchmark
 */
 void *a_malloc(unsigned int num_bytes) {
 
+    if(DEBUG) printf("\nMALLOC CALL\n");
+
     int num_pages_needed = num_bytes/PGSIZE + ((num_bytes % PGSIZE) != 0);
 
     /* 
@@ -392,7 +395,7 @@ void *a_malloc(unsigned int num_bytes) {
        page_dir_created = 1;
    }
 
-   printf("\nMALLOC CALL\n");
+   
 
    if (DEBUG) printf("Number of Pages needed: %d\n", num_pages_needed);
    //print_bitmap(phys_map, 0);
@@ -1021,7 +1024,11 @@ char* put_in_phys(void* val, int offset, int size){
     return dest;
 }
 
-void print_arbitrary_bits(void* location, int num_bits) {
+char* print_arbitrary_bits(void* location, int num_bits) {
+    char* output_str = malloc((num_bits + 1) * sizeof(char));
+    int ptr = num_bits;
+    output_str[ptr] = '\0';
+    ptr -= 1;
     char* arb = (char*) location;
     int num_full_chars = num_bits / 8;
     //printf("num full chars %d\n", num_full_chars);
@@ -1031,15 +1038,17 @@ void print_arbitrary_bits(void* location, int num_bits) {
         char cur = arb[i];
         for (int j = 0; j < 8; j++) {
             int bit = cur >> j & 1;
-            printf("%d", bit);
+            output_str[ptr] = '0' + bit;
+            ptr -= 1;
         }
     }
     for (int j = 0; j < num_leftovers; j++) {
         char cur = arb[num_full_chars];
         int bit = cur >> j & 1;
-        printf("%d", bit);
+        output_str[ptr] = '0' + bit;
+        ptr -= 1;
     }
-    printf("\n");
+    return output_str;
 }
 
 void print_bitmap(char* bitmap, int chunk){
