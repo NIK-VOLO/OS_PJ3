@@ -235,13 +235,13 @@ int page_map(pde_t *pgdir, void *va, void *pa)
 
         // Page table exists but PTE does not        
         // Mapping PTE to physical page
-        page_table[mid_bits] = (pte_t) &pa;
+        page_table[mid_bits] = (pte_t) pa;
         if (DEBUG) printf("Mapping Physical address 0x%lx to PTE %d of %d.\n", (unsigned long int) pa, mid_bits+1, num_table_entries);
 
         // Setting table bitmap
-        char* table_start = (char*)&table_maps[top_bits*num_table_entries/8];
+        char* table_start = (char*)&table_maps[top_bits*32];
         //printf("%d\n", table_start);
-        set_bit_at_index(table_start, 1, mid_bits);
+        set_bit_at_index(table_start, num_table_entries, mid_bits);
 
         // Setting physical bitmap
         int bit_to_set = ((char*)pa - phys) / PGSIZE;
@@ -412,6 +412,14 @@ void *a_malloc(unsigned int num_bytes) {
     void* virt_addr = (void*) &virt;
     
     page_map(entries, virt_addr, free_page);
+
+    printf("Directories after a_malloc():\n");
+    printf("Directory ");
+    print_bitmap(dir_map, 0);
+    printf("Page table ");
+    print_bitmap((char*)&table_maps[0], 0);
+    printf("Physical ");
+    print_bitmap(phys_map, 0);
     
     return virt_addr;
 }
@@ -881,6 +889,14 @@ unsigned long long create_virt_addr(){
                     //printf("Result: ");
                     //print_bitmap((char*) &result, 0);
                     //if (DEBUG) printf("Result VA: %llx\n", result);
+                    // printf("Mid bits: ");
+                    // char* va_str = print_arbitrary_bits((char*)&result, 32);
+                    // for (i = 0; i < 32; i++) {
+                    //     if (i >= 10 && i < 20) {
+                    //         printf("%c", va_str[i]);
+                    //     }
+                    // }
+                    // printf("\n");
                     return result;
                 }
             }

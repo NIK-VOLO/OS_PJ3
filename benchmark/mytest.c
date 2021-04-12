@@ -21,7 +21,7 @@ int main(int argc, char **argv){
     printf("\n -------- ALLOCATING c -------- \n");
     void *c = a_malloc(arr_size);
 
-    printf("Addresses of the allocations: %x, %x, %x\n", (int)a, (int)b, (int)c); // Segfault here
+    printf("Virtual addresses of the allocations: 0x%lx, 0x%lx, 0x%lx\n", (unsigned long int)a, (unsigned long int)b, (unsigned long int)c);
 
     // Testing translate():
     // Called
