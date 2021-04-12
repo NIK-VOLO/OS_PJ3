@@ -533,6 +533,8 @@ void a_free(void *va, int size) {
      * Part 2: Also, remove the translation from the TLB
      */
 
+    // !!! This entire function needs a rethink
+
     int top_bits = get_top_bits(*(unsigned int*)va, num_dir_bits);
     int mid_bits = get_mid_bits(*(unsigned int*)va, num_table_bits, num_offset_bits);    
     top_bits--;
@@ -607,7 +609,8 @@ void put_value(void *va, void *val, int size) {
     int i = 0;
     pthread_mutex_lock(&lock);
     for (i = 0; i < size; i++) {
-        // Pages will always be contiguous, so you can do this
+        // !!! Physical pages will not always be contiguious, so this is wrong
+        // Perhaps use set_in_phys()
         *(pa + i) = *(val_ptr + i);
     }
     pthread_mutex_unlock(&lock);
@@ -707,6 +710,7 @@ void get_value(void *va, void *val, int size) {
     char* pa_ptr = (char*) pa;
     int i = 0;
     for (i = 0; i < size; i++) {
+        // !!! Physical pages will not always be contiguious, so this is wrong
         *(val_ptr + i) = *(pa_ptr + i);
     }
     pthread_mutex_unlock(&lock);
@@ -1177,6 +1181,8 @@ static int get_bit_at_index(char *bitmap, int num_entries, int index)
 * Returns   Pointer to the start location of the copied mem in the physical space
 */
 char* put_in_phys(void* val, int offset, int size){
+
+
     if(offset+size > MEMSIZE){
         return NULL;
     }
@@ -1240,6 +1246,9 @@ int sizeof_bitmap(char* bitmap, int num_chunks){
 }
 
 int check_size(void* va, int size) {
+
+    // !!! This entire function should be replaced or looked over
+    // It checks to make sure requested memory is allocated
 
     if (va < 0) {
         if (DEBUG) printf("check_size() error: invalid virtual address.\n");
