@@ -37,6 +37,8 @@ tlb* tlb_store;
 
 char** table_maps;
 
+pthread_mutex_t lock;
+
 /*
 Function responsible for allocating and setting your physical memory 
 */
@@ -698,8 +700,6 @@ void get_value(void *va, void *val, int size) {
     return;
 }
 
-
-
 /*
 This function receives two matrices mat1 and mat2 as an argument with size
 argument representing the number of rows and columns. After performing matrix
@@ -714,7 +714,41 @@ void mat_mult(void *mat1, void *mat2, int size, void *answer) {
      * store the result to the "answer array"
      */
 
-       
+    int* mat1_copy = malloc(size * size * sizeof(int));
+    int* mat2_copy = malloc(size * size * sizeof(int));
+
+    get_value(mat1, mat1_copy, size * size);
+    get_value(mat2, mat2_copy, size * size);
+
+    
+    int i, j, k, index, mat1_index, mat2_index;
+    int product, product_sum;
+    int* result = malloc(size * size * sizeof(int));
+    // Init result matrix
+    for (i = 0; i < size; i++) {
+        for (j = 0; j < size; j++) {
+            index = (i * size) + j;
+            result[index] = 0;
+        }
+    }
+    // Doing the actual matrix math
+    // Rows of mat1
+    for (i = 0; i < size; i++) {
+        // Cols of mat2
+        for (j = 0; j < size; j++) {
+            // Cols of mat1
+            for (k = 0; k < size; k++) {
+                index = (i * size) + j;
+                mat1_index = (i * size) + k;
+                mat2_index = (k * size) + j;
+                result[index] += mat1_copy[mat1_index] * mat2_copy[mat2_index];
+            }            
+        }
+    }
+
+    answer = result;
+
+    return;
 }
 
 /*
