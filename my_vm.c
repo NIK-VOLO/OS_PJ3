@@ -224,27 +224,64 @@ pte_t *translate(pde_t *pgdir, void *va) {
     unsigned int mid = get_mid_bits(*(unsigned int*)va, num_table_bits, num_offset_bits);
     unsigned int offset = get_mid_bits(*(unsigned int*)va, num_offset_bits, 0);
 
+    top--;
+    mid--;
+
     // Going to PDE
-    pde_t *pde_addr = pgdir + top;
+    //pde_t *pde_addr = pgdir + top;
+    pde_t *pde_addr = &pgdir[top];
+    if(DEBUG) {
+        printf("translate(): pde_addr: %p\n", pde_addr);
+        printf("translate(): Value at pde_addr: %lx\n", *pde_addr);
+    }
     pthread_mutex_lock(&lock);
-    if (*pde_addr == (pde_t) NULL) {
+
+    int bit = get_bit_at_index(dir_map, num_dir_entries, top);
+    if(DEBUG) printf("translate(): bit at dir index %d: %d\n", top, bit);
+    
+    if( bit == 0 ) {
         pthread_mutex_unlock(&lock);
         return NULL;
     }
+
+    // if (*pde_addr == (pde_t) NULL) {
+    //     pthread_mutex_unlock(&lock);
+    //     return NULL;
+    // }
 
     // Going to page table
-    pte_t *pt_addr = (pte_t*) *pde_addr;
+    //pte_t *pt_addr = (pte_t*) *pde_addr;
     // Going to PTE
-    pte_t *pte_addr = pt_addr + mid;
-    if (*pte_addr == (pde_t) NULL) {
+    //pte_t *pte_addr = pt_addr + mid;
+
+    //Get stored address
+    //Construct pointer to that address
+    //Use mid to index table to find physical address
+
+    pte_t* pt_addr = (pte_t*) *pde_addr;
+    pte_t page_addr = (pte_t) &pt_addr[mid];
+    if(DEBUG) printf("translate(): : %p\n", pt_addr);
+    if(DEBUG) printf("translate(): Page Address: %lx\n", page_addr);
+
+    bit = get_bit_at_index((char*)&table_maps[top*32], num_table_entries, mid);
+
+    if( bit == 0 ) {
         pthread_mutex_unlock(&lock);
         return NULL;
     }
 
+    // if (*pte_addr == (pde_t) NULL) {
+    //     pthread_mutex_unlock(&lock);
+    //     return NULL;
+    // }
+
     // Going to physical page
-    pte_t *pp_addr = (pte_t*)(*pte_addr + offset);
+    //pte_t *pp_addr = (pte_t*)(*pte_addr + offset);
+
+    pte_t* result = (pte_t*) page_addr;
+
     pthread_mutex_unlock(&lock);
-    return pp_addr;
+    return result;
 }
 
 
@@ -306,7 +343,9 @@ int page_map(pde_t *pgdir, void *va, void *pa)
 
         // Page table exists but PTE does not        
         // Mapping PTE to physical page
+
         page_table[mid_bits] = (pte_t) pa;
+        if(DEBUG) printf("page_map(): Physical Address: %lx\n", page_table[mid_bits]);
         if (DEBUG) printf("Mapping Physical address 0x%lx to PTE %d of %d.\n", (unsigned long int) pa, mid_bits+1, num_table_entries);
 
         // Setting table bitmap
@@ -608,11 +647,28 @@ void put_value(void *va, void *val, int size) {
 
     int i = 0;
     pthread_mutex_lock(&lock);
-    for (i = 0; i < size; i++) {
-        // !!! Physical pages will not always be contiguious, so this is wrong
-        // Perhaps use set_in_phys()
-        *(pa + i) = *(val_ptr + i);
+    // for (i = 0; i < size; i++) {
+    //     // !!! Physical pages will not always be contiguious, so this is wrong
+    //     // Perhaps use set_in_phys()
+    //     *(pa + i) = *(val_ptr + i);
+    // }
+    unsigned long x = (unsigned long) pa;
+    int ind = (x - (unsigned long) phys) / PGSIZE;
+    //put_in_phys(&val, 2, size);
+    memcpy(pa,val_ptr,size);
+    // void* temp_ptr = (void*) pa;
+    // int* value = (int*) temp_ptr;
+    // *value = 2;
+    
+    //TEST checking value at PA
+    if(DEBUG){
+        printf("put_value(): Allocated PA: %lx\n", x);
+        printf("put_value(): Start of Phys Mem: %lx\n", (unsigned long) phys);
+        printf("put_value(): Index of Page: %d\n", ind);
+        
+        printf("put_value(): Value now at PA: %lx = %d\n", x, *(int*)0xb7da0000);
     }
+
     pthread_mutex_unlock(&lock);
     return;
 }
@@ -698,7 +754,7 @@ void get_value(void *va, void *val, int size) {
     // Check if size is ok
     int too_big = check_size(va, size);
     if (too_big != 0) {
-        return;
+        //return;
     }
 
     pte_t *pa = check_TLB(va);
@@ -708,11 +764,13 @@ void get_value(void *va, void *val, int size) {
 
     pthread_mutex_lock(&lock);
     char* pa_ptr = (char*) pa;
-    int i = 0;
-    for (i = 0; i < size; i++) {
-        // !!! Physical pages will not always be contiguious, so this is wrong
-        *(val_ptr + i) = *(pa_ptr + i);
-    }
+    if(DEBUG) printf("get_value(): PA: %p\n", pa_ptr);
+    // int i = 0;
+    // for (i = 0; i < size; i++) {
+    //     // !!! Physical pages will not always be contiguious, so this is wrong
+    //     *(val_ptr + i) = *(pa_ptr + i);
+    // }
+    memcpy(val, pa, size);
     pthread_mutex_unlock(&lock);
     return;
 }

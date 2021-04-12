@@ -66,7 +66,7 @@ int main(int argc, char **argv){
         printf("\n");
 
         int print_arr[arr_size];
-        get_value(tmp, print_arr, arr_size*sizeof(int));
+        get_value((void*)&tmp_va, print_arr, arr_size*sizeof(int));
 
         printf("Actual: ");
         for (int i = 0; i < arr_size; i++) {
