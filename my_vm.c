@@ -199,16 +199,14 @@ int page_map(pde_t *pgdir, void *va, void *pa)
 
     if (DEBUG) printf("\nSETTING PAGE TABLE ENTRY\n");
     
-    //Convert top bits to an index for Directory
+    // Convert top bits to an index for Directory
     top_bits = get_top_bits(*(unsigned int*)va, num_dir_bits);
     mid_bits = get_mid_bits(*(unsigned int*)va, num_table_bits, num_offset_bits);
 
-    //Decrement these indexes (because they are incremented when creating virtual address)
+    // Decrement these indexes (because they are incremented when creating virtual address)
+    // PET: I don't fully understand this
     top_bits--;
     mid_bits--;
-
-    // Print to top bits of the virtual address
-    if (DEBUG) printf("Page directory index: %s\n", print_arbitrary_bits(&top_bits, num_dir_bits));
 
     // Get page table address
     pde_t pt_addr = pgdir[top_bits];
@@ -218,10 +216,7 @@ int page_map(pde_t *pgdir, void *va, void *pa)
     if (value_dir) {
 
         // Page table already exists
-        if (DEBUG) printf("Page directory mapping exists. Attempting to place page in this entry.\n");
-
-        // Print the middle bits of the virtual address
-        if (DEBUG) printf("Page table index: %s\n", print_arbitrary_bits(&mid_bits, num_table_bits));
+        if (DEBUG) printf("Attempting to place PTE in table %d of %d.\n", top_bits+1, num_pd_entries);
 
         // Get page table and physical page address
         pde_t* page_table = &pt_addr;
@@ -234,23 +229,23 @@ int page_map(pde_t *pgdir, void *va, void *pa)
 
             // PTE already exists
             if (DEBUG) printf("Physical page mapping already exists in page table. No action.\n");
-            
+
             return PGMAP_NOACTION;
         }
 
-        // Page table exists but PTE does not
-        if (DEBUG) printf("Directory entry exists but PTE does not. Adding PTE.\n");
-        
+        // Page table exists but PTE does not        
         // Mapping PTE to physical page
         page_table[mid_bits] = (pte_t) &pa;
+        if (DEBUG) printf("Mapping Physical address 0x%lx to PTE %d of %d.\n", (unsigned long int) pa, mid_bits+1, num_table_entries);
 
         // Setting table bitmap
-        char* assoc_bitmap = table_maps[top_bits*num_table_entries];
-        if (DEBUG) printf("Table bitmap: %s\n", print_arbitrary_bits(assoc_bitmap, num_table_entries));
-        set_bit_at_index(assoc_bitmap, 1, mid_bits);
+        char* table_start = (char*)&table_maps[top_bits*num_table_entries/8];
+        //printf("%d\n", table_start);
+        set_bit_at_index(table_start, 1, mid_bits);
 
         // Setting physical bitmap
-        //TODO
+        int bit_to_set = ((char*)pa - phys) / PGSIZE;
+        set_bit_at_index(phys_map, num_table_entries, bit_to_set);
 
         return PGMAP_NEWPTE;
     }
