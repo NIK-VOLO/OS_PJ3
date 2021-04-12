@@ -74,6 +74,12 @@ void set_physical_mem() {
     tlb_store->virt = malloc(TLB_ENTRIES * sizeof(pte_t));
     memset(tlb_store->virt, 0, TLB_ENTRIES * sizeof(pte_t));
 
+    // Initialize mutex
+    if (pthread_mutex_init(&lock, NULL) != 0) {
+        // Mutex init failed
+        return;
+    }
+
     double higher_bits = (double) (ADDR_BITS - num_offset_bits);
 
     num_phys_pages = MEMSIZE/PGSIZE;
@@ -220,9 +226,9 @@ pte_t *translate(pde_t *pgdir, void *va) {
 
     // Going to PDE
     pde_t *pde_addr = pgdir + top;
-    // mutex lock here?
+    pthread_mutex_lock(&lock);
     if (*pde_addr == (pde_t) NULL) {
-        // mutex unlock here?
+        pthread_mutex_unlock(&lock);
         return NULL;
     }
 
@@ -231,13 +237,13 @@ pte_t *translate(pde_t *pgdir, void *va) {
     // Going to PTE
     pte_t *pte_addr = pt_addr + mid;
     if (*pte_addr == (pde_t) NULL) {
-        // mutex unlock here?
+        pthread_mutex_unlock(&lock);
         return NULL;
     }
 
     // Going to physical page
     pte_t *pp_addr = (pte_t*)(*pte_addr + offset);
-    // mutex unlock here?
+    pthread_mutex_unlock(&lock);
     return pp_addr;
 }
 
@@ -426,6 +432,7 @@ void *a_malloc(unsigned int num_bytes) {
     if(DEBUG) printf("MALLOC CALL\n");
 
     int num_pages_needed = num_bytes/PGSIZE + ((num_bytes % PGSIZE) != 0);
+    pthread_mutex_lock(&lock);
 
     /* 
      * HINT: If the physical memory is not yet initialized, then allocate and initialize.
@@ -459,6 +466,7 @@ void *a_malloc(unsigned int num_bytes) {
    //print_bitmap(phys_map, 0);
    if(free_page == NULL){
        if (DEBUG) printf("ERROR: No available pages were found. . . \n");
+       pthread_mutex_unlock(&lock);
        return NULL;
    }
     if (DEBUG) printf("Next open physical page: %p\n", free_page);
@@ -469,6 +477,7 @@ void *a_malloc(unsigned int num_bytes) {
         int t = get_next_pde(0);
         if(t == -1){
             if (DEBUG) printf("--> PDE is full. . .");
+            pthread_mutex_unlock(&lock);
             return NULL;
         }else{
             create_dir_entry();
@@ -509,6 +518,7 @@ void *a_malloc(unsigned int num_bytes) {
     //         lu_printed += 4;
     //     }
     // }
+    pthread_mutex_unlock(&lock);
     return virt_addr;
 }
 
@@ -530,7 +540,7 @@ void a_free(void *va, int size) {
 
     int num_pages = size / PGSIZE;
     int num_pages_freed = 0;
-
+    pthread_mutex_lock(&lock);
     while (num_pages_freed < num_pages) {
 
         // Clear TLB entries
@@ -559,6 +569,8 @@ void a_free(void *va, int size) {
 
         num_pages_freed += 1;
     }
+
+    pthread_mutex_unlock(&lock);
     
 }
 
@@ -592,12 +604,12 @@ void put_value(void *va, void *val, int size) {
     }
 
     int i = 0;
-    // Mutex lock?
+    pthread_mutex_lock(&lock);
     for (i = 0; i < size; i++) {
         // Pages will always be contiguous, so you can do this
         *(pa + i) = *(val_ptr + i);
     }
-    // Mutex unlock?
+    pthread_mutex_unlock(&lock);
     return;
 }
 
@@ -690,13 +702,13 @@ void get_value(void *va, void *val, int size) {
         return;
     }
 
-    // Mutex lock?
+    pthread_mutex_lock(&lock);
     char* pa_ptr = (char*) pa;
     int i = 0;
     for (i = 0; i < size; i++) {
         *(val_ptr + i) = *(pa_ptr + i);
     }
-    // Mutex unlock?
+    pthread_mutex_unlock(&lock);
     return;
 }
 
