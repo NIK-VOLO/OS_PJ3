@@ -610,45 +610,81 @@ void a_free(void *va, int size) {
      * Part 2: Also, remove the translation from the TLB
      */
 
-    // !!! This entire function needs a rethink
 
-    int top_bits = get_top_bits(*(unsigned int*)va, num_dir_bits);
-    int mid_bits = get_mid_bits(*(unsigned int*)va, num_table_bits, num_offset_bits);    
-    top_bits--;
-    mid_bits--;
-
+    int top_bits;
+    int mid_bits;
     int num_pages = size / PGSIZE;
+    if (size % PGSIZE > 0) num_pages += 1;
     int num_pages_freed = 0;
+    int num_pages_checked = 0;
+    unsigned int* adjusted_va;
+    int bit;
+
     pthread_mutex_lock(&lock);
+    // Check that all given pages are actually in use
+    while (num_pages_checked < num_pages) {
+
+        adjusted_va = va + num_pages_checked;
+
+        top_bits = get_top_bits(*(unsigned int*)adjusted_va, num_dir_bits);
+        mid_bits = get_mid_bits(*(unsigned int*)adjusted_va, num_table_bits, num_offset_bits);    
+        top_bits--;
+        mid_bits--;
+
+        bit = get_bit_at_index((char*)&table_maps[top_bits*32], num_table_entries, mid_bits);
+        if (bit == 0) {
+            if (DEBUG) printf("a_free(): not all given memory is being used\n");
+            return;
+        }
+
+        num_pages_checked += 1;
+    }
+    // Free each of these pages
     while (num_pages_freed < num_pages) {
 
-        // Clear TLB entries
-        //TODO
+        adjusted_va = va + num_pages_freed;
 
-        // Clear table bitmap
-        char* table_start = (char*)&table_maps[top_bits*32];
-        char* mb_str = print_arbitrary_bits(&mid_bits, 10);
-        char* tb_str = print_arbitrary_bits(&top_bits, 10);
+        top_bits = get_top_bits(*(unsigned int*)adjusted_va, num_dir_bits);
+        mid_bits = get_mid_bits(*(unsigned int*)adjusted_va, num_table_bits, num_offset_bits);    
+        top_bits--;
+        mid_bits--;
+
+        // Clear TLB entries
+        // Maybe don't do this all the time
+        // There are situations where another block is in TLB
+        unsigned int tlb_index = get_tlb_index(adjusted_va);
+        tlb_store->phys[tlb_index] = 0;
+        tlb_store->virt[tlb_index] = 0;
+
+        // Clear virtual bitmap
         free_bit_at_index((char*)&table_maps[top_bits*32], num_table_entries, mid_bits);
 
         // Clear physical bitmap
-        pte_t *pa = translate(entries, va);
-        // int bit_to_set = ((char*)pa - phys) / PGSIZE;
+        pte_t *pa = translate(entries, adjusted_va);
         unsigned long x = (unsigned long) pa;
         int bit_to_set = (x - (unsigned long) phys) / PGSIZE;
         free_bit_at_index(phys_map, num_table_entries, bit_to_set);
 
-        // Clear dir bitmap if PDE now empty
-        int pde_empty = 1;
-        for (int i = 0; i < num_table_entries; i++) {
-            int value = get_bit_at_index((char*)&table_maps[i*32], num_table_entries, i);
-            if (value) pde_empty = 0;
-        }
-        if (pde_empty) {
-            free_bit_at_index(dir_map, num_dir_entries, top_bits);
-        }
-
         num_pages_freed += 1;
+    }
+    // Free empty directory bitmaps
+    int i, j, free_table;
+    for (i = 0; i < num_dir_entries; i++) {
+        bit = get_bit_at_index(dir_map, num_dir_entries, i);
+        if (bit == 0) continue;
+
+        // Check to see if no PTEs in table
+        for (j = 0; j < num_table_entries; j++) {
+            free_table = 0;
+            bit = get_bit_at_index((char*)&table_maps[i*32], num_table_entries, j);
+            if (bit == 1) {
+                // Found a used PTE, don't free table
+                free_table = 1;
+                break;
+            }
+        }
+        // No used PTEs found, free table
+        free_bit_at_index(dir_map, num_dir_entries, i);
     }
 
     pthread_mutex_unlock(&lock);
