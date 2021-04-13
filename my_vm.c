@@ -212,6 +212,7 @@ check_TLB(void *va) {
                     if(DEBUG)printf("%d", get_bit_at_index((char*)pa, num_offset_bits, k));
                 }
                 if(DEBUG)printf("\n");
+                //print_bitmap((char*)&pa, 0);
 
                 if(DEBUG)printf("check_TLB(): RESULT PA: %lx\n", (unsigned long)pa);
 
@@ -966,7 +967,7 @@ void mat_mult(void *mat1, void *mat2, int size, void *answer) {
         }
     }
 
-    answer = result;
+    put_value(answer,result, size_of_matrices);
 
     return;
 }
