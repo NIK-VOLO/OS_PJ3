@@ -581,7 +581,7 @@ void *a_malloc(unsigned int num_bytes) {
         if (DEBUG) printf("INITIALIZING SIMULATED PHYSICAL MEMORY\n");
         set_physical_mem();
         phys_created = 1;
-        printf("DONE INITIALIZING SIMULATED PHYSICAL MEMORY\n");
+        if (DEBUG) printf("DONE INITIALIZING SIMULATED PHYSICAL MEMORY\n");
     }
 
    /* 
@@ -595,7 +595,7 @@ void *a_malloc(unsigned int num_bytes) {
        if (DEBUG) printf("INITIALIZING PAGE DIRECTORY\n");
        page_dir_init();
        page_dir_created = 1;
-       printf("DONE INITIALIZING PAGE DIRECTORY.\n");
+       if (DEBUG) printf("DONE INITIALIZING PAGE DIRECTORY.\n");
    }
 
    
@@ -633,7 +633,7 @@ void *a_malloc(unsigned int num_bytes) {
     
     page_map(entries, (void*)res, free_page);
 
-    if (1) {
+    if (1 && DEBUG) {
         printf("Bitmaps after a_malloc():\n");
         printf("Directory ");
         print_bitmap(dir_map, 0);
@@ -769,7 +769,7 @@ void put_value(void *va, void *val, int size) {
 
     unsigned long tmp_va = (unsigned long)va;
 
-    printf("put_value(): Parameter VA: %lx\n", tmp_va);
+    if (DEBUG) printf("put_value(): Parameter VA: %lx\n", tmp_va);
     char *val_ptr = (char*)val;
 
     // Does offset matter?
@@ -932,16 +932,18 @@ void mat_mult(void *mat1, void *mat2, int size, void *answer) {
      * store the result to the "answer array"
      */
 
-    int* mat1_copy = malloc(size * size * sizeof(int));
-    int* mat2_copy = malloc(size * size * sizeof(int));
+    int size_of_matrices = size * size * sizeof(int);
 
-    get_value(mat1, mat1_copy, size * size);
-    get_value(mat2, mat2_copy, size * size);
+    int* mat1_copy = malloc(size_of_matrices);
+    int* mat2_copy = malloc(size_of_matrices);
+
+    get_value(mat1, mat1_copy, size_of_matrices);
+    get_value(mat2, mat2_copy, size_of_matrices);
 
     
     int i, j, k, index, mat1_index, mat2_index;
     int product, product_sum;
-    int* result = malloc(size * size * sizeof(int));
+    int* result = malloc(size_of_matrices);
     // Init result matrix
     for (i = 0; i < size; i++) {
         for (j = 0; j < size; j++) {
