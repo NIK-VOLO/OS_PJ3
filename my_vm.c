@@ -632,6 +632,8 @@ void *a_malloc(unsigned int num_bytes) {
     void* virt_addr = &virt;
     unsigned long res = (unsigned long) virt;
     
+    pthread_mutex_unlock(&lock);
+
     page_map(entries, (void*)res, free_page);
 
     if (1 && DEBUG) {
@@ -660,7 +662,6 @@ void *a_malloc(unsigned int num_bytes) {
     //         lu_printed += 4;
     //     }
     // }
-    pthread_mutex_unlock(&lock);
     return (void*) res;
 }
 
@@ -675,84 +676,55 @@ void a_free(void *va, int size) {
      * Part 2: Also, remove the translation from the TLB
      */
 
-
-    int top_bits;
-    int mid_bits;
+    // Find number of pages to free
     int num_pages = size / PGSIZE;
     if (size % PGSIZE > 0) num_pages += 1;
-    int num_pages_freed = 0;
-    int num_pages_checked = 0;
-    unsigned int* adjusted_va;
-    int bit;
 
-    pthread_mutex_lock(&lock);
+    // Breaking down virtual address
+    int top = get_top_bits((unsigned int)va, num_dir_bits);
+    int mid = get_mid_bits((unsigned int)va, num_table_bits, num_offset_bits); 
+    top--;
+    mid--;
+
     // Check that all given pages are actually in use
-    while (num_pages_checked < num_pages) {
-
-        adjusted_va = va + num_pages_checked;
-
-        top_bits = get_top_bits((unsigned int)adjusted_va, num_dir_bits);
-        mid_bits = get_mid_bits((unsigned int)adjusted_va, num_table_bits, num_offset_bits);    
-        top_bits--;
-        mid_bits--;
-
-        bit = get_bit_at_index((char*)&table_maps[top_bits*32], num_table_entries, mid_bits);
-        if (bit == 0) {
-            if (DEBUG) printf("a_free(): not all given memory is being used\n");
-            return;
-        }
-
-        num_pages_checked += 1;
+    int check = check_size(va, size);
+    if (check != 0) {
+        if (DEBUG) printf("free() error: size too large");
+        //return;
     }
+
     // Free each of these pages
+    int num_pages_freed = 0;
+    int virt_to_free, phys_to_free;
+    int new_top, new_mid;
+    unsigned long pa_to_free;
     while (num_pages_freed < num_pages) {
 
-        adjusted_va = va + num_pages_freed;
-
-        top_bits = get_top_bits((unsigned int)adjusted_va, num_dir_bits);
-        mid_bits = get_mid_bits((unsigned int)adjusted_va, num_table_bits, num_offset_bits);    
-        top_bits--;
-        mid_bits--;
-
-        // Clear TLB entries
-        // Maybe don't do this all the time
-        // There are situations where another block is in TLB
-        unsigned int tlb_index = get_tlb_index(adjusted_va);
-        tlb_store->phys[tlb_index] = 0;
-        tlb_store->virt[tlb_index] = 0;
+        // Finding virtual page to free
+        new_top = top;
+        new_mid = (mid + num_pages_freed) % num_table_entries;
+        if ((mid + num_pages_freed) / num_table_entries != 0) {
+            // Overflow to new dir entry
+            new_top = top + (mid + num_pages_freed) / num_table_entries;
+        }
+        virt_to_free = ((new_top + 1) * scalbn(1, num_table_bits + num_offset_bits)) + ((new_mid + 1) * scalbn(1, num_offset_bits)) ;
 
         // Clear virtual bitmap
-        free_bit_at_index((char*)&table_maps[top_bits*32], num_table_entries, mid_bits);
+        free_bit_at_index((char*)&table_maps[new_top * 32], num_table_entries, new_mid);
 
         // Clear physical bitmap
-        pte_t *pa = translate(entries, adjusted_va);
-        unsigned long x = (unsigned long) pa;
-        int bit_to_set = (x - (unsigned long) phys) / PGSIZE;
-        free_bit_at_index(phys_map, num_table_entries, bit_to_set);
+        pa_to_free = (unsigned int) check_TLB((void*) virt_to_free);
+        phys_to_free = (pa_to_free - (unsigned long) phys) / PGSIZE;
+        free_bit_at_index(phys_map, num_phys_pages, phys_to_free);
+
+        // Clear TLB entries
+        //TODO
 
         num_pages_freed += 1;
     }
+
     // Free empty directory bitmaps
-    int i, j, free_table;
-    for (i = 0; i < num_dir_entries; i++) {
-        bit = get_bit_at_index(dir_map, num_dir_entries, i);
-        if (bit == 0) continue;
-
-        // Check to see if no PTEs in table
-        for (j = 0; j < num_table_entries; j++) {
-            free_table = 0;
-            bit = get_bit_at_index((char*)&table_maps[i*32], num_table_entries, j);
-            if (bit == 1) {
-                // Found a used PTE, don't free table
-                free_table = 1;
-                break;
-            }
-        }
-        // No used PTEs found, free table
-        free_bit_at_index(dir_map, num_dir_entries, i);
-    }
-
-    pthread_mutex_unlock(&lock);
+    //TODO
     
 }
 
@@ -1457,40 +1429,22 @@ int sizeof_bitmap(char* bitmap, int num_chunks){
     return 0;
 }
 
+// Returns 0 if all values are 0
+// Returns 1 if all values are 1
+// Returns -1 if there's a mix
 int check_size(void* va, int size) {
 
-    // !!! This entire function should be replaced or looked over
-    // It checks to make sure requested memory is allocated
+    int all0 = 1;
+    int all1 = 1;
 
-    if (va < 0) {
-        if (DEBUG) printf("check_size() error: invalid virtual address.\n");
-        return 1;
-    }
-    
-    int num_pages = size / PGSIZE;
-    if (size % PGSIZE != 0) num_pages += 1;
+    int top = get_top_bits((unsigned int)va, num_dir_bits);
+    int mid = get_mid_bits((unsigned int)va, num_table_bits, num_offset_bits); 
 
-    unsigned int top_bits = get_top_bits((unsigned int)va, num_dir_bits);
-    unsigned int mid_bits = get_mid_bits((unsigned int)va, num_table_bits, num_offset_bits);
-    unsigned int offset_index = get_mid_bits((unsigned int)va, num_offset_bits, 0);
-    top_bits--;
-    mid_bits--;
-
-    int index = 0;
-    int value_table;
-    while (index < num_pages) {
-        value_table = get_bit_at_index((char*)&table_maps[top_bits*32], num_table_entries, mid_bits + index);
-        if (value_table == 0) {
-            // Not allocated
-            if (DEBUG) printf("check_size() error: not entirely allocated.\n");
-            return 2;
-        }
-        index += 1;
-    }
     
 
-    // All good
-    return 0;
+    if (all0) return 0;
+    if (all1) return 1;
+    return -1
 }
 
 unsigned long get_tlb_index(void* va) {
