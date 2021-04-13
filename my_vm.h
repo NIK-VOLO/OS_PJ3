@@ -14,7 +14,7 @@
 #include <sys/mman.h>
 #include <errno.h>
 
-#define DEBUG 1
+#define DEBUG 0
 
 #define PGSIZE 4096
 

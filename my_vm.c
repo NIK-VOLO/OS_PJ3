@@ -203,19 +203,19 @@ check_TLB(void *va) {
                 tlb_store->hits += 1;
 
                 //Add the offset bits to pa
-                for(k = 0; k < num_offset_bits; k++){
-                    bit = get_bit_at_index((char*) &offset, num_offset_bits, k);
+                // for(k = 0; k < num_offset_bits; k++){
+                //     bit = get_bit_at_index((char*) &offset, num_offset_bits, k);
                     
-                    if(bit == 1){
-                        set_bit_at_index((char*)pa, num_offset_bits, k);
-                    }
-                    if(DEBUG)printf("%d", get_bit_at_index((char*)pa, num_offset_bits, k));
-                }
-                if(DEBUG)printf("\n");
+                //     if(bit == 1){
+                //         set_bit_at_index((char*)pa, num_offset_bits, k);
+                //     }
+                //     if(DEBUG)printf("%d", get_bit_at_index((char*)pa, num_offset_bits, k));
+                // }
+                // if(DEBUG)printf("\n");
 
-                if(DEBUG)printf("check_TLB(): RESULT PA: %lx\n", (unsigned long)pa);
+                // if(DEBUG)printf("check_TLB(): RESULT PA: %lx\n", (unsigned long)pa);
 
-                return (pte_t*) pa + offset;
+                return (pte_t*) (pa + offset);
             }
 
         }
@@ -290,11 +290,11 @@ pte_t *translate(pde_t *pgdir, void *va) {
 
     // Going to PDE
     // pde_t *pde_addr = pgdir + top;
-    pde_t *pde_addr = &(pgdir[top]);
+    pde_t pde_addr = (pde_t) (pgdir[top]);
     if(DEBUG) {
         printf("translate(): top bits: %d -- mid bits: %d\n", top, mid);
-        printf("translate(): pde_addr: %p\n", pde_addr);
-        printf("translate(): Address of Page Table: %lx\n", *pde_addr);
+        printf("translate(): pde_addr: %p\n", &pde_addr);
+        printf("translate(): Address of Page Table: %lx\n", pde_addr);
     }
     pthread_mutex_lock(&lock);
 
@@ -320,8 +320,8 @@ pte_t *translate(pde_t *pgdir, void *va) {
     //Construct pointer to that address
     //Use mid to index table to find physical address
 
-    pte_t* pt_addr = (pte_t*) *pde_addr;
-    pte_t page_addr = (pte_t) &pt_addr[mid];
+    pte_t* pt_addr = (pte_t*) pde_addr;
+    pte_t page_addr = (pte_t) pt_addr[mid];
     if(DEBUG) printf("translate(): : %p\n", &pt_addr[mid]);
     if(DEBUG) printf("translate(): Page Address: %lx\n", page_addr);
 
@@ -400,7 +400,7 @@ int page_map(pde_t *pgdir, void *va, void *pa)
         //pde_t* page_table = &pt_addr;
         //pte_t page_addr = page_table[*mid_bits];
 
-        pde_t* page_table = &pgdir[*top_bits];
+        pde_t page_table = (pde_t) pgdir[*top_bits];
 
         // Check if page table contains entry at index
         //int num_table_entries = scalbn(1, num_table_bits);
@@ -420,9 +420,10 @@ int page_map(pde_t *pgdir, void *va, void *pa)
         // Mapping PTE to physical page
 
         int i = *mid_bits;
+        pte_t* tb = (pte_t*) page_table;
 
-        page_table[i] = (pte_t) pa;
-        if(DEBUG) printf("page_map(): Physical Address: %lx\n", page_table[i]);
+        tb[i] = (pte_t) pa;
+        if(DEBUG) printf("page_map(): Physical Address: %lx\n", tb[i]);
         if (DEBUG) printf("Mapping Physical address 0x%lx to PTE %d of %d.\n", (unsigned long int) pa, (*mid_bits), num_table_entries);
 
         // Setting table bitmap
@@ -689,8 +690,8 @@ void a_free(void *va, int size) {
 
         adjusted_va = va + num_pages_checked;
 
-        top_bits = get_top_bits(*(unsigned int*)adjusted_va, num_dir_bits);
-        mid_bits = get_mid_bits(*(unsigned int*)adjusted_va, num_table_bits, num_offset_bits);    
+        top_bits = get_top_bits((unsigned int)adjusted_va, num_dir_bits);
+        mid_bits = get_mid_bits((unsigned int)adjusted_va, num_table_bits, num_offset_bits);    
         top_bits--;
         mid_bits--;
 
@@ -707,8 +708,8 @@ void a_free(void *va, int size) {
 
         adjusted_va = va + num_pages_freed;
 
-        top_bits = get_top_bits(*(unsigned int*)adjusted_va, num_dir_bits);
-        mid_bits = get_mid_bits(*(unsigned int*)adjusted_va, num_table_bits, num_offset_bits);    
+        top_bits = get_top_bits((unsigned int)adjusted_va, num_dir_bits);
+        mid_bits = get_mid_bits((unsigned int)adjusted_va, num_table_bits, num_offset_bits);    
         top_bits--;
         mid_bits--;
 
