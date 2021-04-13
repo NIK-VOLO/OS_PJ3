@@ -73,6 +73,8 @@ void set_physical_mem() {
     memset(tlb_store->phys, 0, TLB_ENTRIES * sizeof(pte_t));
     tlb_store->virt = malloc(TLB_ENTRIES * sizeof(pte_t));
     memset(tlb_store->virt, 0, TLB_ENTRIES * sizeof(pte_t));
+    tlb_store->num_entries = (int) malloc(sizeof(int));
+    tlb_store->num_entries = 0;
 
     // Initialize mutex
     if (pthread_mutex_init(&lock, NULL) != 0) {
@@ -120,18 +122,37 @@ add_TLB(void *va, void *pa)
 
     unsigned long tlb_index = get_tlb_index(va);
 
-    //evict
-    if (tlb_store->phys[tlb_index] != 0) {
-        if (DEBUG) printf("Evicting TLB mapping: ");
-        if (DEBUG) printf("virtual 0x%lx to ", (unsigned long int) tlb_store->phys[tlb_index]);
-        if (DEBUG) printf("phys 0x%lx\n", (unsigned long int) tlb_store->virt[tlb_index]);
+
+    int i;
+    for(i = 0; i < TLB_ENTRIES; i++){
+        if(tlb_store->phys[i] == 0){
+            if (DEBUG) printf("Adding TLB mapping: ");
+            tlb_store->phys[i] = (pte_t) pa;
+            tlb_store->virt[i] = (pte_t) va;
+            tlb_store->num_entries += 1;
+            if (DEBUG) printf("virt 0x%lx to ", (unsigned long int) va);
+            if (DEBUG) printf("phys 0x%lx\n", (unsigned long int) pa);
+            if (DEBUG) printf("TLB Entries %d\n", tlb_store->num_entries);
+            break;
+        }
     }
 
-    if (DEBUG) printf("Adding TLB mapping: ");
-    tlb_store->phys[tlb_index] = (pte_t) pa;
-    tlb_store->virt[tlb_index] = (pte_t) va;
-    if (DEBUG) printf("virt 0x%lx to ", *(unsigned long int*) va);
-    if (DEBUG) printf("phys 0x%lx\n", (unsigned long int) pa);
+    //TODO: Evictions
+    
+    //evict
+    // if (tlb_store->phys[tlb_index] != 0) {
+    //     if (DEBUG) printf("Evicting TLB mapping: ");
+    //     if (DEBUG) printf("virtual 0x%lx to ", (unsigned long int) tlb_store->phys[tlb_index]);
+    //     if (DEBUG) printf("phys 0x%lx\n", (unsigned long int) tlb_store->virt[tlb_index]);
+    // }
+
+    // if (DEBUG) printf("Adding TLB mapping: ");
+    // tlb_store->phys[tlb_index] = (pte_t) pa;
+    // tlb_store->virt[tlb_index] = (pte_t) va;
+    // tlb_store->num_entries += 1;
+    // if (DEBUG) printf("virt 0x%lx to ", *(unsigned long int*) va);
+    // if (DEBUG) printf("phys 0x%lx\n", (unsigned long int) pa);
+    // if (DEBUG) printf("TLB Entries %d\n", tlb_store->num_entries);
 
     return 0;
 }
@@ -149,39 +170,78 @@ check_TLB(void *va) {
     // TLB index:
     // (((unsigned int)va)&tlb_bitmask) >> (numOffsetBits)
 
-    unsigned long tlb_index = get_tlb_index(va);
-    unsigned long offset = get_mid_bits(*(unsigned int*)va, num_offset_bits, 0);
+    //unsigned long tlb_index = get_tlb_index(va);
+    unsigned long offset = get_mid_bits((unsigned int)va, num_offset_bits, 0);
+    unsigned long top_bits = get_top_bits((unsigned int)va, num_dir_bits);
+    unsigned long mid_bits = get_mid_bits((unsigned int)va, num_table_bits, num_offset_bits);
 
-    pte_t mapping = tlb_store->phys[tlb_index];
+    unsigned long top_virt;
+    unsigned long mid_virt;
 
-    if (mapping != 0) {
-        
-        if (DEBUG) printf("TLB hit\n");
+    if(DEBUG) printf("check_TLB(): Offset value: %lu\n", offset);
 
-        // TLB hit
-        pte_t* pa = (pte_t*) tlb_store->phys[tlb_index];
+    //ITERATIVELY Look through TLB for the virtual address
 
-        // Increment TLB hits
-        tlb_store->hits += 1;
+    pte_t mapping;
 
-        return (pte_t*) pa;
+    int i;
+    int k;
+    int bit;
+    for(i = 0; i < TLB_ENTRIES; i++){
+        mapping = tlb_store->phys[i];
+
+        if (mapping != 0) {
+            //Check if the top and mid bits match the TLB entry
+            top_virt = get_top_bits((unsigned int)tlb_store->virt[i], num_dir_bits);
+            mid_virt = get_mid_bits((unsigned int)tlb_store->virt[i], num_table_bits, num_offset_bits);
+
+            if(mid_bits == mid_virt && top_bits == top_virt){
+                if (DEBUG) printf("TLB hit\n");
+                // TLB hit
+                pte_t* pa = (pte_t*) tlb_store->phys[i];
+                // Increment TLB hits
+                tlb_store->hits += 1;
+
+                //Add the offset bits to pa
+                for(k = 0; k < num_offset_bits; k++){
+                    bit = get_bit_at_index((char*) &offset, num_offset_bits, k);
+                    
+                    if(bit == 1){
+                        set_bit_at_index((char*)pa, num_offset_bits, k);
+                    }
+                    if(DEBUG)printf("%d", get_bit_at_index((char*)pa, num_offset_bits, k));
+                }
+                if(DEBUG)printf("\n");
+
+                if(DEBUG)printf("check_TLB(): RESULT PA: %lx\n", (unsigned long)pa);
+
+                return (pte_t*) pa + offset;
+            }
+
+        }
     }
-    else {
-        
-        if (DEBUG) printf("TLB miss\n");
 
-        // TLB miss
+     if(tlb_store->num_entries == TLB_ENTRIES){
+         if(DEBUG) printf("check_TLB(): TLB is FULL\n");
+     }else{
+         if (DEBUG) printf("TLB miss\n");
 
-        pte_t *pa = translate(entries, va);
-        
-        // Update TLB
-        add_TLB(va, pa);
+            // TLB miss
+            pte_t *pa = translate(entries, va);
+            
+            // Update TLB
+            add_TLB(va, pa);
 
-        // Increment TLB misses
-        tlb_store->misses += 1;
+            // Increment TLB misses
+            tlb_store->misses += 1;
 
-        return (pte_t*) pa + offset;
-    }
+            return (pte_t*) pa;
+     }
+
+
+    printf("check_TLB(): **** BIG ERROR ****\n");
+    return NULL;
+    
 
 }
 
@@ -220,19 +280,21 @@ pte_t *translate(pde_t *pgdir, void *va) {
     * translation exists, then you can return physical address from the TLB.
     */
 
-    unsigned int top = get_top_bits(*(unsigned int*)va, num_dir_bits);
-    unsigned int mid = get_mid_bits(*(unsigned int*)va, num_table_bits, num_offset_bits);
-    unsigned int offset = get_mid_bits(*(unsigned int*)va, num_offset_bits, 0);
+    unsigned int top = get_top_bits((unsigned int)va, num_dir_bits);
+    unsigned int mid = get_mid_bits((unsigned int)va, num_table_bits, num_offset_bits);
+    unsigned int offset = get_mid_bits((unsigned int)va, num_offset_bits, 0);
 
     top--;
     mid--;
 
+
     // Going to PDE
-    //pde_t *pde_addr = pgdir + top;
-    pde_t *pde_addr = &pgdir[top];
+    // pde_t *pde_addr = pgdir + top;
+    pde_t *pde_addr = &(pgdir[top]);
     if(DEBUG) {
+        printf("translate(): top bits: %d -- mid bits: %d\n", top, mid);
         printf("translate(): pde_addr: %p\n", pde_addr);
-        printf("translate(): Value at pde_addr: %lx\n", *pde_addr);
+        printf("translate(): Address of Page Table: %lx\n", *pde_addr);
     }
     pthread_mutex_lock(&lock);
 
@@ -260,7 +322,7 @@ pte_t *translate(pde_t *pgdir, void *va) {
 
     pte_t* pt_addr = (pte_t*) *pde_addr;
     pte_t page_addr = (pte_t) &pt_addr[mid];
-    if(DEBUG) printf("translate(): : %p\n", pt_addr);
+    if(DEBUG) printf("translate(): : %p\n", &pt_addr[mid]);
     if(DEBUG) printf("translate(): Page Address: %lx\n", page_addr);
 
     bit = get_bit_at_index((char*)&table_maps[top*32], num_table_entries, mid);
@@ -315,9 +377,9 @@ int page_map(pde_t *pgdir, void *va, void *pa)
     
     // Convert top bits to an index for Directory
     //unsigned long dummy_va = *(unsigned long*)va;
-    *top_bits = get_top_bits(*(unsigned int*)va, num_dir_bits);
+    *top_bits = get_top_bits((unsigned int)va, num_dir_bits);
     //dummy_va = *(unsigned long*)va;
-    *mid_bits = get_mid_bits(*(unsigned int*)va, num_table_bits, num_offset_bits);
+    *mid_bits = get_mid_bits((unsigned int)va, num_table_bits, num_offset_bits);
 
     // Decrement these indexes (because they are incremented when creating virtual address)
     // PET: I don't fully understand this
@@ -360,14 +422,14 @@ int page_map(pde_t *pgdir, void *va, void *pa)
         int i = *mid_bits;
 
         page_table[i] = (pte_t) pa;
-        if(DEBUG) printf("page_map(): Physical Address: %lx\n", page_table[*mid_bits]);
+        if(DEBUG) printf("page_map(): Physical Address: %lx\n", page_table[i]);
         if (DEBUG) printf("Mapping Physical address 0x%lx to PTE %d of %d.\n", (unsigned long int) pa, (*mid_bits), num_table_entries);
 
         // Setting table bitmap
         //char* table_start = (char*)&table_maps[(*top_bits)*32];
         //char* mb_str = print_arbitrary_bits(mid_bits, 10);
        // char* tb_str = print_arbitrary_bits(top_bits, 10);
-        if(DEBUG) printf("page_map(): mid bits (index): %d\n", *mid_bits);
+        if(DEBUG) printf("page_map(): top bits (index): %d\nmid bits (index): %d\n", *top_bits, *mid_bits);
         set_bit_at_index((char*)&table_maps[(*top_bits)*32], num_table_entries, *mid_bits);
 
         //if(DEBUG) print_bitmap((char*)&table_maps[0*32],0);
@@ -376,7 +438,7 @@ int page_map(pde_t *pgdir, void *va, void *pa)
         // int bit_to_set = ((char*)pa - phys) / PGSIZE;
         unsigned long x = (unsigned long) pa;
         int bit_to_set = (x - (unsigned long) phys) / PGSIZE;
-        set_bit_at_index(phys_map, num_table_entries, bit_to_set);
+        set_bit_at_index(phys_map, num_phys_pages, bit_to_set);
 
         if (DEBUG) printf("DONE SETTING PAGE TABLE ENTRY\n");
 
@@ -565,9 +627,10 @@ void *a_malloc(unsigned int num_bytes) {
         }
     }
     if (DEBUG) printf("Generated Virtual Address: 0x%llx\n", virt);
-    void* virt_addr = (void*) &virt;
+    void* virt_addr = &virt;
+    unsigned long res = (unsigned long) virt;
     
-    page_map(entries, virt_addr, free_page);
+    page_map(entries, (void*)res, free_page);
 
     if (1) {
         printf("Bitmaps after a_malloc():\n");
@@ -596,7 +659,7 @@ void *a_malloc(unsigned int num_bytes) {
     //     }
     // }
     pthread_mutex_unlock(&lock);
-    return (void*) virt;
+    return (void*) res;
 }
 
 /* Responsible for releasing one or more memory pages using virtual address (va)
@@ -703,18 +766,20 @@ void put_value(void *va, void *val, int size) {
      * function.
      */
 
-    printf("put_value(): Parameter VA: %lx\n", *(unsigned long int*)va);
+    unsigned long tmp_va = (unsigned long)va;
+
+    printf("put_value(): Parameter VA: %lx\n", tmp_va);
     char *val_ptr = (char*)val;
 
     // Does offset matter?
     // Check to see if space is allocated
-    int space_ok = check_size(va, size);
+    int space_ok = check_size((void*)tmp_va, size);
     if(space_ok != 0) {
         return;
     }
 
     // Check TLB for phys address
-    char *pa = (char*)check_TLB(va);
+    char *pa = (char*)check_TLB((void*) tmp_va);
     if (pa == NULL) {
         // Something's wrong with the virtual address
         if (DEBUG) printf("put_value() error: invalid virtual address.\n");
@@ -742,7 +807,8 @@ void put_value(void *va, void *val, int size) {
         printf("put_value(): Start of Phys Mem: %lx\n", (unsigned long) phys);
         printf("put_value(): Index of Page: %d\n", ind);
         
-        printf("put_value(): Value now at PA: %lx = %d\n", x, *(int*)0xb7da0000);
+        printf("put_value(): Value now at PA: %lx = %d\n", x, *(int*)x);
+        printf("\n");
     }
 
     pthread_mutex_unlock(&lock);
@@ -831,9 +897,9 @@ void get_value(void *va, void *val, int size) {
     int too_big = check_size(va, size);
     if (too_big != 0) {
         //return;
-    }
-
-    pte_t *pa = check_TLB(va);
+    } 
+    unsigned long tmp_va = (unsigned long)va;
+    pte_t *pa = check_TLB((void*)tmp_va);
     if (pa == NULL) {
         return;
     }
@@ -1400,9 +1466,9 @@ int check_size(void* va, int size) {
     int num_pages = size / PGSIZE;
     if (size % PGSIZE != 0) num_pages += 1;
 
-    unsigned int top_bits = get_top_bits(*(unsigned int*)va, num_dir_bits);
-    unsigned int mid_bits = get_mid_bits(*(unsigned int*)va, num_table_bits, num_offset_bits);
-    unsigned int offset_index = get_mid_bits(*(unsigned int*)va, num_offset_bits, 0);
+    unsigned int top_bits = get_top_bits((unsigned int)va, num_dir_bits);
+    unsigned int mid_bits = get_mid_bits((unsigned int)va, num_table_bits, num_offset_bits);
+    unsigned int offset_index = get_mid_bits((unsigned int)va, num_offset_bits, 0);
     top_bits--;
     mid_bits--;
 
@@ -1425,7 +1491,7 @@ int check_size(void* va, int size) {
 
 unsigned long get_tlb_index(void* va) {
     
-    unsigned long result = get_mid_bits(*(unsigned int*)va, num_tlb_bits, num_offset_bits);
+    unsigned long result = get_mid_bits((unsigned int)va, num_tlb_bits, num_offset_bits);
 
     return 0;
 }

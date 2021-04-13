@@ -14,9 +14,9 @@ int main(int argc, char **argv){
     // printf("%s\n", print_arbitrary_bits(&val, 8));
 
     int test0 = 0; // Passed
-    int test1 = 1; // Not passed
+    int test1 = 0; // Not passed
     int test2 = 0; // Not passed
-    int test3 = 0; // 
+    int test3 = 1; // 
     int test4 = 0; // 
 
     // Allocating three one-page blocks
@@ -54,8 +54,8 @@ int main(int argc, char **argv){
         for (int i = 0; i < arr_size; i++) {
             val[i] = i + 1;
         }
-        unsigned long tmp_va = *(unsigned long int*)tmp;
-        printf("a_malloc returned VA: %lx\n", *(unsigned long int*)tmp);
+        unsigned long tmp_va = *(unsigned long*)tmp;
+        printf("a_malloc returned VA: %lx\n", *(unsigned long*)tmp);
         printf("Putting value into virtual address.\n");
         put_value((void*)&tmp_va, val, arr_size*sizeof(int));
 
@@ -77,16 +77,18 @@ int main(int argc, char **argv){
 
     // Putting one int into a one-page block
     if (test3) {
-        int *tmp = a_malloc(sizeof(int));
-        unsigned long tmp_va = *(unsigned long int*)tmp;
-        int *val;
-        get_value((void*)&tmp_va, val, sizeof(int));
-        printf("Initial value of memory: %d\n", *val); 
-        int new_val = 10;
-        *val = new_val;
-        put_value((void*)&tmp_va, val, sizeof(int));
-        get_value((void*)&tmp_va, val, sizeof(int));
-        printf("New value of memory: %d\n", *val);
+        void *tmp = a_malloc(sizeof(int));
+        //unsigned long tmp_va = *(unsigned long*)tmp;
+        int val;
+        //int new_val = 10;
+        get_value((void*)tmp, &val, sizeof(int));
+        
+        printf("Initial value of memory: %d\n", val); 
+        
+        val = 10;
+        put_value((void*)tmp, &val, sizeof(int));
+        get_value((void*)tmp, &val, sizeof(int));
+        printf("New value of memory: %d\n", val);
     }
 
     // Putting one int into a one-page block, then changing it twice

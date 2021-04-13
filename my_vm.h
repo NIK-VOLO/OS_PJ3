@@ -56,6 +56,7 @@ struct tlb {
    pte_t* virt;
    int hits;
    int misses;
+   int num_entries;
 };
 
 //Struct for Page table
