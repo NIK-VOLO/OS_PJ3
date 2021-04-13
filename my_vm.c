@@ -202,20 +202,20 @@ check_TLB(void *va) {
                 // Increment TLB hits
                 tlb_store->hits += 1;
 
-                //Add the offset bits to pa
-                // for(k = 0; k < num_offset_bits; k++){
-                //     bit = get_bit_at_index((char*) &offset, num_offset_bits, k);
+                // Add the offset bits to pa
+                for(k = 0; k < num_offset_bits; k++){
+                    bit = get_bit_at_index((char*) &offset, num_offset_bits, k);
                     
-                //     if(bit == 1){
-                //         set_bit_at_index((char*)pa, num_offset_bits, k);
-                //     }
-                //     if(DEBUG)printf("%d", get_bit_at_index((char*)pa, num_offset_bits, k));
-                // }
-                // if(DEBUG)printf("\n");
+                    if(bit == 1){
+                        set_bit_at_index((char*)&pa, num_offset_bits, k);
+                    }
+                    if(DEBUG)printf("%d", get_bit_at_index((char*)pa, num_offset_bits, k));
+                }
+                if(DEBUG)printf("\n");
 
-                // if(DEBUG)printf("check_TLB(): RESULT PA: %lx\n", (unsigned long)pa);
+                if(DEBUG)printf("check_TLB(): RESULT PA: %lx\n", (unsigned long)pa);
 
-                return (pte_t*) (pa + offset);
+                return (pte_t*) pa;
             }
 
         }
