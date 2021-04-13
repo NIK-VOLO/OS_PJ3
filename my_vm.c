@@ -367,7 +367,7 @@ int page_map(pde_t *pgdir, void *va, void *pa)
         //char* table_start = (char*)&table_maps[(*top_bits)*32];
         //char* mb_str = print_arbitrary_bits(mid_bits, 10);
        // char* tb_str = print_arbitrary_bits(top_bits, 10);
-        //if(DEBUG) printf("page_map(): top bits (index) before setting: %d\n", *top_bits);
+        if(DEBUG) printf("page_map(): mid bits (index): %d\n", *mid_bits);
         set_bit_at_index((char*)&table_maps[(*top_bits)*32], num_table_entries, *mid_bits);
 
         //if(DEBUG) print_bitmap((char*)&table_maps[0*32],0);
@@ -596,7 +596,7 @@ void *a_malloc(unsigned int num_bytes) {
     //     }
     // }
     pthread_mutex_unlock(&lock);
-    return virt_addr;
+    return (void*) virt;
 }
 
 /* Responsible for releasing one or more memory pages using virtual address (va)
@@ -1072,6 +1072,13 @@ unsigned long long create_virt_addr(){
         if(value_dir == 1){ //Found an allocated/available directory slot
             for(k = 0; k < num_table_entries; k++){
                 //Find the first UNallocated slot in the table
+
+                if(k > 1020){
+                    printf("create_virt_addr(): Table ");
+                    set_bit_at_index((char*)&table_maps[i*32], num_table_entries, 1023);
+                    print_bitmap((char*)&table_maps[i*32], 31);
+                    printf("\n");
+                }
                 
                 //The Index [i * 32] is to reach the next chunk of bits representing the bitmap for the ith table
                 value_table = get_bit_at_index((char*)&table_maps[i*32], num_table_entries, k); 
@@ -1223,7 +1230,7 @@ static unsigned int get_mid_bits (unsigned int value, int num_middle_bits, int n
 static void set_bit_at_index(char *bitmap, int num_entries, int index)
 {
     if(index > num_entries){
-        if (DEBUG) printf("ERROR: Trying to set an index larger than number of entries. . . \n");
+        if (DEBUG) printf("ERROR: Trying to set an index (%d) larger than number of entries (%d). . . \n", index, num_entries);
         return;
     }
 
