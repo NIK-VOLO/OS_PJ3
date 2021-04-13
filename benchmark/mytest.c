@@ -36,7 +36,7 @@ int main(int argc, char **argv){
 
     // Allocating a large number of one-page blocks
     if (test1) {
-        int num_malloc_calls = 20;
+        int num_malloc_calls = 1025;
         int i = 0;
         while (i < num_malloc_calls) {
             void *tmp = a_malloc(1);
@@ -78,14 +78,14 @@ int main(int argc, char **argv){
     // Putting one int into a one-page block
     if (test3) {
         int *tmp = a_malloc(sizeof(int));
-
+        unsigned long tmp_va = *(unsigned long int*)tmp;
         int *val;
-        get_value(tmp, val, sizeof(int));
+        get_value((void*)&tmp_va, val, sizeof(int));
         printf("Initial value of memory: %d\n", *val); 
         int new_val = 10;
         *val = new_val;
-        put_value(tmp, val, sizeof(int));
-        get_value(tmp, val, sizeof(int));
+        put_value((void*)&tmp_va, val, sizeof(int));
+        get_value((void*)&tmp_va, val, sizeof(int));
         printf("New value of memory: %d\n", *val);
     }
 
