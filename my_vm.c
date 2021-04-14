@@ -85,6 +85,7 @@ void set_physical_mem() {
     double higher_bits = (double) (ADDR_BITS - num_offset_bits);
 
     num_phys_pages = MEMSIZE/PGSIZE;
+    num_virt_pages = MEMSIZE/PGSIZE;
     if (DEBUG) printf("Number of physical Pages: %d\n", num_phys_pages);
 
     //Max size of bitmap: 32 bits
@@ -688,8 +689,8 @@ void a_free(void *va, int size) {
 
     // Check that all given pages are actually in use
     int check = check_size(va, size);
-    if (check != 0) {
-        if (DEBUG) printf("free() error: size too large");
+    if (check != 1) {
+        if (DEBUG) printf("free() error: not all allocated\n");
         //return;
     }
 
@@ -747,8 +748,9 @@ void put_value(void *va, void *val, int size) {
 
     // Does offset matter?
     // Check to see if space is allocated
-    int space_ok = check_size((void*)tmp_va, size);
-    if(space_ok != 0) {
+    int check = check_size((void*)tmp_va, size);
+    if(check != 1) {
+        if (DEBUG) printf("put_value() error: not all allocated\n");
         return;
     }
 
@@ -868,9 +870,10 @@ void get_value(void *va, void *val, int size) {
     char* val_ptr = (char*) val;
 
     // Check if size is ok
-    int too_big = check_size(va, size);
-    if (too_big != 0) {
-        //return;
+    int check = check_size(va, size);
+    if (check != 1) {
+        if (DEBUG) printf("get_value() error: not all allocated\n");
+        return;
     } 
     unsigned long tmp_va = (unsigned long)va;
     pte_t *pa = check_TLB((void*)tmp_va);
@@ -1431,7 +1434,8 @@ int sizeof_bitmap(char* bitmap, int num_chunks){
 
 // Returns 0 if all values are 0
 // Returns 1 if all values are 1
-// Returns -1 if there's a mix
+// Returns 2 if there's a mix
+// Returns -1 if out of bounds
 int check_size(void* va, int size) {
 
     int all0 = 1;
@@ -1439,12 +1443,37 @@ int check_size(void* va, int size) {
 
     int top = get_top_bits((unsigned int)va, num_dir_bits);
     int mid = get_mid_bits((unsigned int)va, num_table_bits, num_offset_bits); 
+    top--;
+    mid--;
 
-    
+    // Find where va is associated in table_maps
+    char* start = (char*) &table_maps[top*32];
+
+    // Loop through table_maps
+    int i = 0;
+    int new_top, new_mid, mid_overflow, top_overflow;
+    int bit;
+    while (i < ((size / PGSIZE)+1)) {
+
+        new_mid = (mid + i) % num_virt_pages;
+        mid_overflow = (mid + i) / num_virt_pages;
+        new_top = top + mid_overflow;
+        top_overflow = new_top % num_dir_entries;
+        if (top_overflow > 0) {
+            // Trying to escape virt memory boundaries
+            return -1;
+        }
+
+        bit = get_bit_at_index((char*)&table_maps[new_top*32], num_table_entries, new_mid);
+        if (bit == 1) all0 = 0;
+        if (bit == 0) all1 = 0;
+        i++;
+    }
+
 
     if (all0) return 0;
     if (all1) return 1;
-    return -1
+    return 2;
 }
 
 unsigned long get_tlb_index(void* va) {
