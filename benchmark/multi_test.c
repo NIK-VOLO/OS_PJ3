@@ -6,7 +6,7 @@ void *pointers[num_threads];
 int ids[num_threads];
 pthread_t threads[num_threads];
 int alloc_size = 10000;
-int matrix_size = 5;
+int matrix_size = 20;
 
 void *alloc_mem(void *id_arg) {
     int id = *((int *)id_arg);
@@ -125,4 +125,6 @@ int main() {
     if (!flag) {
         printf("Some Problem with free!\n");
     }
+
+    print_TLB_missrate();
 }

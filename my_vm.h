@@ -57,6 +57,7 @@ struct tlb {
    int hits;
    int misses;
    int num_entries;
+   int stamp;
 };
 
 //Struct for Page table

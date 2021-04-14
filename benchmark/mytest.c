@@ -5,7 +5,7 @@
 #include <pthread.h>
 #include "../my_vm.h"
 
-#define SIZE 5
+#define SIZE 10
 #define ARRAY_SIZE 400
 
 int main(int argc, char **argv){
@@ -16,8 +16,8 @@ int main(int argc, char **argv){
     int test0 = 0; // Passed
     int test1 = 0; // Not passed
     int test2 = 0; // Not passed
-    int test3 = 1; // 
-    int test4 = 0; // 
+    int test3 = 0; // 
+    int test4 = 1; // 
 
     // Allocating three one-page blocks
     if (test0) {
@@ -91,17 +91,13 @@ int main(int argc, char **argv){
         printf("New value of memory: %d\n", val);
     }
 
-    // Putting one int into a one-page block, then changing it twice
+    // Allocate large amount of data
     if (test4) {
-        int *tmp = a_malloc(sizeof(int));
-        printf("Initial value of memory: %d\n", *tmp); // Appears to contain junk value
-        *tmp = 10;
-        printf("New value of memory: %d\n", *tmp);
-        *tmp = 100;
-        printf("New value of memory: %d\n", *tmp);
-        *tmp = 1000;
-        printf("New value of memory: %d\n", *tmp);
+       void *tmp = a_malloc(16000);
+       void* tmp2 = a_malloc(16000);
     }
+
+    print_TLB_missrate();
 
     return 0;
 }

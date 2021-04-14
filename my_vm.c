@@ -37,6 +37,8 @@ tlb* tlb_store;
 
 char** table_maps;
 
+int max_stamp = 0;
+
 pthread_mutex_t lock;
 
 /*
@@ -131,14 +133,19 @@ add_TLB(void *va, void *pa)
             tlb_store->phys[i] = (pte_t) pa;
             tlb_store->virt[i] = (pte_t) va;
             tlb_store->num_entries += 1;
+            tlb_store->stamp = max_stamp;
+            max_stamp++;
             if (DEBUG) printf("virt 0x%lx to ", (unsigned long int) va);
             if (DEBUG) printf("phys 0x%lx\n", (unsigned long int) pa);
             if (DEBUG) printf("TLB Entries %d\n", tlb_store->num_entries);
-            break;
+            return 0;
         }
     }
 
-    //TODO: Evictions
+    //Evictions
+    if(DEBUG)printf("add_TLB(): TLB Full... Evicting something\n");
+    tlb_store->phys[max_stamp] = (pte_t) pa;
+    tlb_store->virt[max_stamp] = (pte_t) va;
     
     //evict
     // if (tlb_store->phys[tlb_index] != 0) {
@@ -188,6 +195,12 @@ check_TLB(void *va) {
     int i;
     int k;
     int bit;
+
+    max_stamp++;
+    if(max_stamp >= TLB_ENTRIES){
+        max_stamp = 0;
+    }
+
     for(i = 0; i < TLB_ENTRIES; i++){
         mapping = tlb_store->phys[i];
 
@@ -202,6 +215,7 @@ check_TLB(void *va) {
                 pte_t* pa = (pte_t*) tlb_store->phys[i];
                 // Increment TLB hits
                 tlb_store->hits += 1;
+                
 
                 // Add the offset bits to pa
                 for(k = 0; k < num_offset_bits; k++){
@@ -699,6 +713,11 @@ void a_free(void *va, int size) {
     int virt_to_free, phys_to_free;
     int new_top, new_mid;
     unsigned long pa_to_free;
+
+    unsigned long top_virt;
+    unsigned long mid_virt;
+    int i;
+    
     while (num_pages_freed < num_pages) {
 
         // Finding virtual page to free
@@ -719,13 +738,28 @@ void a_free(void *va, int size) {
         free_bit_at_index(phys_map, num_phys_pages, phys_to_free);
 
         // Clear TLB entries
-        //TODO
+        
+        for(i = 0; i < TLB_ENTRIES; i++){
+            //Check if the top and mid bits match the TLB entry
+            top_virt = get_top_bits((unsigned int)tlb_store->virt[i], num_dir_bits);
+            mid_virt = get_mid_bits((unsigned int)tlb_store->virt[i], num_table_bits, num_offset_bits);
+            if(new_mid+1 == mid_virt && new_top+1 == top_virt){
+                if (DEBUG) printf("a_free(): Found entry to delete in TLB\n");
+                //Remove the entry: SEt to 0
+                tlb_store->phys[i] = 0;
+                tlb_store->virt[i] = 0;
+            }
+
+        }
 
         num_pages_freed += 1;
     }
 
     // Free empty directory bitmaps
     //TODO
+    //Look to a directory entry's (page table) to see if there are any bits set.
+    //If not, delete the table and the reference in the dir
+    
     
 }
 
