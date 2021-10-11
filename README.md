@@ -1,4 +1,17 @@
-# OS_PJ3
+# User-level Memory Management
+The goal of this project is to develop a fully functional virtualized memory in the user-space and have it completely separate from the OS. Implementation of our own malloc() function allows use to use this virtual memory just as we would the OS managed memory. 
+
+Mimics the the memory management unit (MMU) to map the virtualized memory to physical memory. 
+
+
+## In Review
+What I learned from this project in hindsight
+- Focus more on keeping the code clean as you work, don't wait until later to go back and clean it
+- Don't use print statements as much for logging
+- Structure your functions more and test extensively
+- Do more research on best practices
+
+<!-- # OS_PJ3
 User-level Memory Management
 
 ## Grade components
@@ -51,3 +64,4 @@ User-level Memory Management
 - Benchmark output for part 1 and the observed TLB miss rate in part 2.
 - Support for different page sizes (in multiples of 4K).
 - Possible issues in your code (if any).
+ -->
