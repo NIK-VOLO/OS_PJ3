@@ -1,7 +1,7 @@
 # User-level Memory Management
 The goal of this project is to develop a fully functional virtualized memory in the user-space and have it completely separate from the OS. Implementation of our own malloc() function allows use to use this virtual memory just as we would the OS managed memory. 
 
-Mimics the the memory management unit (MMU) to map the virtualized memory to physical memory. 
+Mimics the memory management unit (MMU) to map the virtualized memory to physical memory. 
 
 
 ## In Review
